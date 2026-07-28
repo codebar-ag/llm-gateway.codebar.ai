@@ -116,21 +116,21 @@ jobs:
 
       - name: Store Log Artifacts
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: Store report artifacts
           path: ./storage/logs
 
       - name: Store Screenshots
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: Dusk Screenshots
           path: ./tests/Browser/screenshots
 
       - name: Store Console Logs
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: Dusk Console Logs
           path: ./tests/Browser/console
