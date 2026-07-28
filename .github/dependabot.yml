@@ -1,0 +1,44 @@
+version: 2
+
+# The composer ecosystem needs credentials for the private Nova registry.
+# NOVA_USERNAME / NOVA_LICENSE_KEY must exist as *Dependabot* secrets
+# (Settings → Secrets and variables → Dependabot), separate from Actions secrets.
+registries:
+  nova:
+    type: composer-repository
+    url: https://nova.laravel.com
+    username: ${{ secrets.NOVA_USERNAME }}
+    password: ${{ secrets.NOVA_LICENSE_KEY }}
+
+updates:
+  - package-ecosystem: composer
+    directory: /
+    registries:
+      - nova
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      composer-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

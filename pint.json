@@ -1,0 +1,14 @@
+{
+    "preset": "laravel",
+    "rules": {
+        "phpdoc_types": false
+    },
+    "paths": [
+        "app",
+        "bootstrap",
+        "config",
+        "database",
+        "routes",
+        "tests"
+    ]
+}

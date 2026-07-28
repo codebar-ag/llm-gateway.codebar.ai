@@ -1,0 +1,79 @@
+/node_modules
+/.lasso
+/public/build/
+/public/hot
+/public/storage
+/public/css/
+/public/js/
+/public/vendor/*
+/public/mix-manifest.json
+/storage/*.key
+/storage/debugbar/
+/vendor
+docker-compose.override.yml
+npm-debug.log
+/.php-cs-fixer.cache
+.DS_STORE
+.npmrc
+
+database/seeders/LocalSeeder.php
+database/seeders/ProductionSeeder.php
+
+## Debugbar
+storage/debugbar/
+
+# IDEA configurtion
+/.idea
+/.vscode
+
+# Laravel Boost / editor agent outputs (regenerate after clone: php artisan boost:install && php artisan boost:update)
+/.claude/
+/.cursor/
+/.junie/
+/.mcp.json
+/CLAUDE.md
+
+# Environment files
+.env
+.env.backup
+.env.production
+.env.staging
+.env.dusk.local
+
+# PHP Unit
+.phpunit.result.cache
+.phpunit.cache/
+
+# Laravel IDE Helper Generator
+/_ide_helper.php
+/_ide_helper_models.php
+/.phpstorm.meta.php
+
+# Composer authentication
+auth.json
+
+# File types
+*.pdf
+*.docx
+*.xlsx
+
+# Coverage
+/coverage/
+--cache-directory
+
+# Dusk
+/tests/Browser/screenshots
+/tests/Browser/console
+# Laravel storage (do not commit compiled views, cache, sessions)
+/storage/framework/cache/data/*
+!/storage/framework/cache/data/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/testing/*
+!/storage/framework/testing/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore
+/storage/app/public/*
+!/storage/app/public/.gitignore

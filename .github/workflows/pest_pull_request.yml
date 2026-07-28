@@ -1,0 +1,99 @@
+name: Pull Request | CI Pest
+
+on: pull_request
+
+jobs:
+  ci_pest:
+    runs-on: ubuntu-latest
+    name: pull-request | ci pest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: laravel_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      PHP_VERSION: 8.5
+      NODE_VERSION: 24
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup PHP Environment
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: dom, curl, fileinfo, pgsql, pdo_pgsql, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick
+
+      - name: Prepare the .env file
+        run: cp .env.testing.ci .env
+
+      - name: Prepare the .env file
+        run: cp -f .env.testing.ci .env.testing
+
+      - name: Configure Composer Credentials
+        run: |
+          composer config http-basic.composer.fluxui.dev ${{ secrets.FLUXUI_USERNAME }} ${{ secrets.FLUXUI_LICENSE_KEY }}
+          composer config http-basic.nova.laravel.com ${{ secrets.NOVA_USERNAME }} ${{ secrets.NOVA_LICENSE_KEY }}
+
+      - name: Cache Composer Dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.composer/cache/files
+            ~/.composer/cache/repo
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Install Composer Dependencies
+        run: composer install --no-progress --prefer-dist --no-interaction --optimize-autoloader
+
+      - name: Publish Laravel assets
+        run: php artisan vendor:publish --tag=laravel-assets --ansi --force
+
+      - name: Publish Laravel Nova assets
+        run: php artisan vendor:publish --tag=nova-assets --ansi --force
+
+      - name: Setup PostgreSQL Database
+        run: |
+          # Database is already created by the service, just wait for it to be ready
+          until pg_isready -h localhost -p 5432 -U postgres; do sleep 1; done
+
+      - name: Generate App Key & Run Migrations
+        run: |
+          php artisan key:generate
+          php artisan migrate:fresh
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install NPM Dependencies
+        run: npm install --frozen-lockfile
+
+      - name: Build Frontend Assets
+        run: npm run build
+
+      - name: Execute Pest Test
+        run: ./vendor/bin/pest tests/Core tests/Feature tests/Helper tests/Unit
+
+      - name: Store Log Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Store report artifacts
+          path: ./storage/logs

@@ -1,0 +1,71 @@
+{
+    "connect": [
+        "wss:",
+        "api.userback.io/",
+        "res.cloudinary.com/codebar/",
+        "prod-s3-public.s3-website-bc01.gos3.io/",
+        "unpkg.com/",
+        "srv-dev-space-fra-001.fra1.digitaloceanspaces.com/",
+        "srv-dev-space-fra-001.fra1.cdn.digitaloceanspaces.com/",
+        "srv-stage-space-fra-001.fra1.digitaloceanspaces.com/",
+        "srv-stage-space-fra-001.fra1.cdn.digitaloceanspaces.com/",
+        "srv-prod-space-fra-001.fra1.digitaloceanspaces.com/",
+        "srv-prod-space-fra-001.fra1.cdn.digitaloceanspaces.com/"
+    ],
+    "img": [
+        "data:",
+        "blob:",
+        "localhost/",
+        "prod-s3-public.s3-website-bc01.gos3.io/",
+        "cdn.usefathom.com/",
+        "cdn-eu.usefathom.com/",
+        "www.gravatar.com/avatar/",
+        "secure.gravatar.com/avatar/",
+        "res.cloudinary.com/codebar/",
+        "srv-dev-space-fra-001.fra1.digitaloceanspaces.com/",
+        "srv-dev-space-fra-001.fra1.cdn.digitaloceanspaces.com/",
+        "srv-stage-space-fra-001.fra1.digitaloceanspaces.com/",
+        "srv-stage-space-fra-001.fra1.cdn.digitaloceanspaces.com/",
+        "srv-prod-space-fra-001.fra1.digitaloceanspaces.com/",
+        "srv-prod-space-fra-001.fra1.cdn.digitaloceanspaces.com/"
+    ],
+    "media": [
+        "srv-dev-space-fra-001.fra1.digitaloceanspaces.com/",
+        "srv-dev-space-fra-001.fra1.cdn.digitaloceanspaces.com/",
+        "srv-stage-space-fra-001.fra1.digitaloceanspaces.com/",
+        "srv-stage-space-fra-001.fra1.cdn.digitaloceanspaces.com/",
+        "srv-prod-space-fra-001.fra1.digitaloceanspaces.com/",
+        "srv-prod-space-fra-001.fra1.cdn.digitaloceanspaces.com/"
+    ],
+    "font": [
+        "data:",
+        "use.typekit.net/",
+        "fonts.gstatic.com/",
+        "fonts.googleapis.com/",
+        "fonts.bunny.net/",
+        "static.userback.io/",
+        "rsms.me/inter/font-files/",
+        "prod-s3-public.s3-website-bc01.gos3.io/portal-vanta-ch/production"
+    ],
+    "script": [
+        "cdn.usefathom.com/",
+        "cdn-eu.usefathom.com/",
+        "static.userback.io/",
+        "cdnjs.cloudflare.com/ajax/libs/dragula/",
+        "prod-s3-public.s3-website-bc01.gos3.io/",
+        "unpkg.com/"
+    ],
+    "style_elem": [
+        "static.userback.io/",
+        "fonts.googleapis.com/",
+        "fonts.sandbox.google.com/",
+        "fonts.bunny.net/",
+        "rsms.me/inter/"
+    ],
+    "style": [
+        "static.userback.io/",
+        "fonts.sandbox.google.com/",
+        "fonts.googleapis.com/",
+        "rsms.me/inter/"
+    ]
+}

@@ -1,0 +1,120 @@
+name: production | Lasso publish
+
+on:
+  push:
+    branches:
+      - production
+
+concurrency:
+  group: lasso-publish-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  generate_lasso_assets:
+    name: Build assets and lasso:publish
+    runs-on: ubuntu-latest
+
+    env:
+      PHP_VERSION: '8.5'
+      NODE_VERSION: '24'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: dom, curl, fileinfo, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv
+
+      - name: Configure Composer (Nova, Flux)
+        run: |
+          composer config http-basic.composer.fluxui.dev ${{ secrets.FLUXUI_USERNAME }} ${{ secrets.FLUXUI_LICENSE_KEY }}
+          composer config http-basic.nova.laravel.com ${{ secrets.NOVA_USERNAME }} ${{ secrets.NOVA_LICENSE_KEY }}
+
+      - name: Cache Composer
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.composer/cache/files
+            ~/.composer/cache/repo
+          key: ${{ runner.os }}-composer-lasso-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-lasso-
+
+      - name: Install Composer dependencies
+        run: composer install --no-dev --no-progress --prefer-dist --no-interaction --optimize-autoloader
+
+      - name: Write .env for Lasso
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_ENDPOINT: ${{ secrets.AWS_ENDPOINT }}
+        run: |
+          {
+            echo 'APP_NAME="Laravel Start"'
+            echo 'APP_ENV=production'
+            echo 'APP_KEY=base64:F+mHMDBbavrsp/I3WYA5lDSwDJJI/0wQG4eM3csq/lo='
+            echo 'APP_DEBUG=false'
+            echo 'APP_URL=https://localhost'
+            echo 'DB_CONNECTION=sqlite'
+            echo 'DB_DATABASE=:memory:'
+            echo 'SESSION_DRIVER=array'
+            echo 'CACHE_STORE=array'
+            echo 'QUEUE_CONNECTION=sync'
+            echo 'FILESYSTEM_DISK=local'
+            echo 'LASSO_ENV=production'
+            echo 'NIGHTWATCH_ENABLED=false'
+            echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}"
+            echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}"
+            echo "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-fra1}"
+            echo "AWS_BUCKET=${AWS_BUCKET:-srv-dev-space-fra-001}"
+          } > .env
+          if [ -n "${AWS_ENDPOINT}" ]; then
+            echo "AWS_ENDPOINT=${AWS_ENDPOINT}" >> .env
+          fi
+
+      - name: Publish Laravel and Nova assets
+        run: |
+          php artisan vendor:publish --tag=laravel-assets --ansi --force
+          php artisan vendor:publish --tag=nova-assets --ansi --force
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Publish assets with Lasso
+        run: php artisan lasso:publish --no-git --silent --with-commit="${{ github.sha }}"
+
+  laravel_cloud_deploy:
+    name: Trigger Laravel Cloud deploy
+    runs-on: ubuntu-latest
+    needs:
+      - generate_lasso_assets
+
+    env:
+      LARAVEL_CLOUD_DEPLOY_WEBHOOK_URL: ${{ secrets.LARAVEL_CLOUD_DEPLOY_WEBHOOK_URL }}
+
+    steps:
+      - name: Trigger Laravel Cloud deploy
+        if: env.LARAVEL_CLOUD_DEPLOY_WEBHOOK_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [[ "${LARAVEL_CLOUD_DEPLOY_WEBHOOK_URL}" == *'?'* ]]; then
+            url="${LARAVEL_CLOUD_DEPLOY_WEBHOOK_URL}&commit_hash=${COMMIT_SHA}"
+          else
+            url="${LARAVEL_CLOUD_DEPLOY_WEBHOOK_URL}?commit_hash=${COMMIT_SHA}"
+          fi
+          curl --fail --silent --show-error -X POST "$url"

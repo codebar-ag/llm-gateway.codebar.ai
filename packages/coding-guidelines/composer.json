@@ -1,0 +1,43 @@
+{
+    "name": "codebar-ag/coding-guidelines",
+    "type": "library",
+    "description": "Shared Laravel coding guidelines and skills for codebar-ag projects. Composer package for Laravel Boost.",
+    "keywords": [
+        "laravel",
+        "boost",
+        "coding-guidelines",
+        "skills"
+    ],
+    "license": "MIT",
+    "version": "1.2.0",
+    "require": {
+        "illuminate/console": "^12.41.1|^13.0",
+        "illuminate/support": "^12.41.1|^13.0",
+        "laravel/boost": "^2.2",
+        "php": "^8.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "CodebarAg\\CodingGuidelines\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "CodebarAg\\CodingGuidelines\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "require-dev": {
+        "laravel/pint": "^1.27",
+        "phpunit/phpunit": "^11.0",
+        "laravel/ai": "^0.2.0",
+        "orchestra/testbench": "^10.0",
+        "pestphp/pest": "^3.0",
+        "pestphp/pest-plugin-laravel": "^3.0"
+    }
+}

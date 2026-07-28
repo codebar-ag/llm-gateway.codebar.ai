@@ -1,0 +1,11 @@
+parameters:
+    paths:
+        - app
+    level: 8
+    # Keep declare at 0 until strict_types is adopted broadly. Raise other axes gradually.
+    type_coverage:
+        declare: 0
+        param_type: 10
+        return_type: 10
+        property_type: 10
+        constant_type: 10

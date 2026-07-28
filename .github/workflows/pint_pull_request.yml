@@ -1,0 +1,32 @@
+name: Pull Request | Pint
+
+on: pull_request
+
+jobs:
+  pint:
+    runs-on: ubuntu-latest
+    name: pull-request | pint
+
+    env:
+      PHP_VERSION: '8.5'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup PHP Environment
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: dom, curl, fileinfo, pgsql, pdo_pgsql, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv
+
+      - name: Configure Composer Credentials
+        run: |
+          composer config http-basic.composer.fluxui.dev ${{ secrets.FLUXUI_USERNAME }} ${{ secrets.FLUXUI_LICENSE_KEY }}
+          composer config http-basic.nova.laravel.com ${{ secrets.NOVA_USERNAME }} ${{ secrets.NOVA_LICENSE_KEY }}
+
+      - name: Install Composer Dependencies
+        run: composer install --no-progress --prefer-dist --no-interaction --optimize-autoloader
+
+      - name: Run Pint
+        run: ./vendor/bin/pint --test
