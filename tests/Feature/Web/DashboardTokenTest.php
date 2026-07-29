@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 use App\Http\Middleware\VerifyDashboardToken;
 use App\Models\BacklogEntry;
+use App\Models\User;
 
 beforeEach(fn () => config()->set('gateway.dashboard.token', dashboardToken()));
+
+/*
+ | The token is the outer of two guards. These tests hold a session throughout
+ | wherever they expect to get past it, so what they assert is the token's own
+ | behaviour rather than the login's — that is Feature/Auth/LoginTest.
+ */
 
 it('refuses the backlog without a token', function () {
     $this->get('/')->assertForbidden();
@@ -32,16 +39,23 @@ it('never leaks a prompt to an unauthenticated visitor', function () {
         ->assertDontSee('invoice total');
 });
 
-it('hides the dashboard entirely when no token is configured', function () {
+/*
+ | The two below reverse what this middleware used to do. An empty token once
+ | 404'd the dashboard, on the grounds that it would otherwise stand open. It
+ | no longer stands open — a login is required either way — so an empty token
+ | now means "no second secret", not "no dashboard".
+ */
+
+it('falls back to the login alone when no token is configured', function () {
     config()->set('gateway.dashboard.token', '');
 
-    $this->get('/')->assertNotFound();
+    $this->get('/')->assertRedirect(route('login'));
 });
 
-it('cannot be opened with an empty token when none is configured', function () {
+it('still requires a session when no token is configured', function () {
     config()->set('gateway.dashboard.token', '');
 
-    $this->get('/?token=')->assertNotFound();
+    $this->actingAs(User::factory()->create())->get('/')->assertOk();
 });
 
 it('trades a token in the query for a cookie', function () {
@@ -62,15 +76,22 @@ it('strips the token from an entry url too', function () {
         ->assertRedirect('/entries/'.$entry->id);
 });
 
-it('lets the remembered cookie through', function () {
+it('lets the remembered cookie through to the login', function () {
     $this->withCookie(VerifyDashboardToken::COOKIE, dashboardToken())
         ->get('/')
-        ->assertOk()
-        ->assertSee('LLM Gateway');
+        ->assertRedirect(route('login'));
+});
+
+it('opens the dashboard with both the cookie and a session', function () {
+    $this->actingAs(User::factory()->create())
+        ->withCookie(VerifyDashboardToken::COOKIE, dashboardToken())
+        ->get('/')
+        ->assertOk();
 });
 
 it('accepts the token as a bearer token for scripted checks', function () {
-    $this->withHeader('Authorization', 'Bearer '.dashboardToken())
+    $this->actingAs(User::factory()->create())
+        ->withHeader('Authorization', 'Bearer '.dashboardToken())
         ->get('/')
         ->assertOk();
 });
@@ -79,9 +100,23 @@ it('does not let a caller api key open the dashboard', function () {
     $this->withHeaders(gatewayAuth())->get('/')->assertForbidden();
 });
 
-it('leaves the api reachable with the dashboard switched off', function () {
+it('guards the login form itself when a token is configured', function () {
+    $this->get(route('login'))->assertForbidden();
+
+    $this->withCookie(VerifyDashboardToken::COOKIE, dashboardToken())
+        ->get(route('login'))
+        ->assertOk();
+});
+
+it('leaves the api reachable with the dashboard token unset', function () {
     config()->set('gateway.dashboard.token', '');
 
     $this->getJson('/v1/responses')->assertOk();
     $this->get('/up')->assertOk();
+});
+
+it('never redirects an api caller to the login', function () {
+    $this->getJson('/v1/responses')->assertOk();
+
+    $this->getJson('/v1/responses/resp_missing')->assertNotFound();
 });

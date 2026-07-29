@@ -38,8 +38,19 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
+      # @codebar-ag/storybook lives in another repository's GitHub Packages
+      # registry, which the automatic per-run GITHUB_TOKEN cannot read. Set the
+      # PACKAGES_TOKEN secret to a PAT with `read:packages`; the fallback only
+      # works while the package is published from this same repository.
       - name: Install NPM Dependencies
         run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # An undeclared prop renders as a stray HTML attribute instead of failing,
+      # so neither the build nor the PHP suite would catch it.
+      - name: Check Design System Props
+        run: npm run lint:props
 
       - name: Build Frontend Assets
         run: npm run build

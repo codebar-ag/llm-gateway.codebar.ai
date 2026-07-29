@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Enums\GatewayProtocol;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
+use Illuminate\Support\Facades\Auth;
+use Inertia\Testing\AssertableInertia;
 
 /** @return array<string, mixed> */
 function gatewayAttributes(array $overrides = []): array
@@ -28,20 +30,25 @@ it('lists the gateways with the caller base url shortened but still copyable', f
 
     $this->get(route('gateways'))
         ->assertOk()
-        ->assertSee($gateway->name)
-        ->assertSee('/'.substr($gateway->id, 0, 8).'…/v1')
-        ->assertSee('data-copy="'.$gateway->callerBaseUrl().'"', false);
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('Gateways/Index')
+            ->where('gateways.0.name', $gateway->name)
+            ->where('gateways.0.shortId', substr($gateway->id, 0, 8))
+            ->where('gateways.0.callerBaseUrl', $gateway->callerBaseUrl()));
 });
 
-it('answers default and active in their own columns', function () {
+it('answers default and active per row', function () {
     $default = Gateway::default();
-    $other = Gateway::factory()->ollama()->create(['name' => 'Sidelined', 'is_active' => false]);
+    Gateway::factory()->ollama()->create(['name' => 'Sidelined', 'is_active' => false]);
 
-    $response = $this->get(route('gateways'))->assertOk();
+    $rows = collect(inertiaProps($this->get(route('gateways'))->assertOk())['gateways'])
+        ->keyBy('name');
 
-    // Between a name and its protocol badge sit only the default and active cells.
-    $response->assertSeeInOrder([$default->name, 'yes', 'yes', $default->protocol->label()])
-        ->assertSeeInOrder([$other->name, 'no', 'no', $other->protocol->label()]);
+    expect($rows[$default->name]['isDefault'])->toBeTrue()
+        ->and($rows[$default->name]['isActive'])->toBeTrue()
+        ->and($rows['Sidelined']['isDefault'])->toBeFalse()
+        ->and($rows['Sidelined']['isActive'])->toBeFalse()
+        ->and($rows['Sidelined']['protocol']['label'])->toBe('Ollama');
 });
 
 it('creates a gateway', function () {
@@ -127,6 +134,64 @@ it('rejects an unknown protocol', function () {
         ->assertSessionHasErrors('protocol');
 });
 
+it('promotes a gateway to default from the edit form', function () {
+    $previous = Gateway::default();
+    $gateway = Gateway::factory()->create();
+
+    $this->put(route('gateways.update', $gateway), gatewayAttributes(['is_default' => '1']))
+        ->assertRedirect(route('gateways'));
+
+    expect($gateway->fresh()->is_default)->toBeTrue()
+        ->and($previous->fresh()->is_default)->toBeFalse()
+        ->and(Gateway::query()->where('is_default', true)->count())->toBe(1);
+});
+
+it('promotes a gateway to default as it is created', function () {
+    $previous = Gateway::default();
+
+    $this->post(route('gateways.store'), gatewayAttributes(['is_default' => '1']))
+        ->assertRedirect(route('gateways'));
+
+    expect(Gateway::default()?->name)->toBe('Ollama box')
+        ->and($previous->fresh()->is_default)->toBeFalse()
+        ->and(Gateway::query()->where('is_default', true)->count())->toBe(1);
+});
+
+it('leaves the default alone when the box is unticked', function () {
+    $gateway = Gateway::factory()->create();
+
+    $this->put(route('gateways.update', $gateway), gatewayAttributes(['is_default' => '0']))
+        ->assertRedirect(route('gateways'));
+
+    expect($gateway->fresh()->is_default)->toBeFalse()
+        ->and(Gateway::default()?->name)->toBe('Default');
+});
+
+it('cannot demote the gateway that holds the default', function () {
+    $gateway = Gateway::default();
+
+    $this->put(route('gateways.update', $gateway), gatewayAttributes(['is_default' => '0']))
+        ->assertRedirect(route('gateways'));
+
+    expect($gateway->fresh()->is_default)->toBeTrue()
+        ->and(Gateway::query()->where('is_default', true)->count())->toBe(1);
+});
+
+it('disables the default box on the gateway already holding it', function () {
+    $default = Gateway::default();
+    $other = Gateway::factory()->create();
+
+    // `isDefault` is what disables the box, so assert the flag the page binds
+    // rather than the markup it happens to produce.
+    $this->get(route('gateways.edit', $default))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('gateway.isDefault', true));
+
+    $this->get(route('gateways.edit', $other))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('gateway.isDefault', false));
+});
+
 it('moves the default and clears the previous holder', function () {
     $previous = Gateway::default();
     $gateway = Gateway::factory()->create();
@@ -166,11 +231,15 @@ it('makes the very first gateway the default on its own', function () {
     expect(Gateway::default()?->name)->toBe('Ollama box');
 });
 
-it('is switched off with the rest of the dashboard', function () {
+it('still requires a session when no dashboard token is configured', function () {
     config(['gateway.dashboard.token' => '']);
 
-    $this->post(route('gateways.store'), gatewayAttributes())->assertNotFound();
-    $this->get(route('gateways'))->assertNotFound();
+    // The shared beforeEach logs an operator in; this asserts what is left
+    // guarding the gateway table once both that session and the token are
+    // gone. Writing here decides where every request in the app is sent.
+    Auth::logout();
+
+    $this->post(route('gateways.store'), gatewayAttributes())->assertRedirect(route('login'));
 
     expect(Gateway::query()->where('name', 'Ollama box')->exists())->toBeFalse();
 });
@@ -186,9 +255,13 @@ it('refuses a wrong dashboard token', function () {
 it('renders a blank create form seeded from the upstream ceiling', function () {
     $this->get(route('gateways.create'))
         ->assertOk()
-        ->assertSee('New gateway')
-        ->assertSee('Create gateway')
-        ->assertSee((string) config('gateway.upstream.max_timeout'));
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('Gateways/Form')
+            ->where('editing', false)
+            ->where('gateway.name', '')
+            ->where('gateway.timeout', config('gateway.upstream.max_timeout'))
+            ->where('maxTimeout', config('gateway.upstream.max_timeout'))
+            ->where('urls.submit', route('gateways.store')));
 });
 
 it('renders the edit form filled in with the gateway', function () {
@@ -196,8 +269,11 @@ it('renders the edit form filled in with the gateway', function () {
 
     $this->get(route('gateways.edit', $gateway))
         ->assertOk()
-        ->assertSee('Edit gateway')
-        ->assertSee('Edit me')
-        ->assertSee($gateway->base_url)
-        ->assertSee($gateway->callerBaseUrl());
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('Gateways/Form')
+            ->where('editing', true)
+            ->where('gateway.name', 'Edit me')
+            ->where('gateway.baseUrl', $gateway->base_url)
+            ->where('gateway.callerBaseUrl', $gateway->callerBaseUrl())
+            ->where('urls.submit', route('gateways.update', $gateway)));
 });

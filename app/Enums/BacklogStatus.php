@@ -42,14 +42,14 @@ enum BacklogStatus: string
         };
     }
 
-    /** Which of the badge component's tones this status reads as. */
+    /** One of the design system's semantic tones, for Badge/StatusBadge. */
     public function tone(): string
     {
         return match ($this) {
-            self::Queued => 'amber',
-            self::Running => 'blue',
-            self::Completed => 'emerald',
-            self::Failed => 'red',
+            self::Queued => 'warning',
+            self::Running => 'info',
+            self::Completed => 'success',
+            self::Failed => 'danger',
             self::Cancelled => 'neutral',
         };
     }

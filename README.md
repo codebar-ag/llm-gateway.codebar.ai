@@ -341,10 +341,33 @@ shows one entry in full: the request that went upstream (**including the whole
 prompt, and for vision calls the base64 image**), the answer, the usage and the
 names — never the values — of the forwarded headers.
 
-Because that is the most sensitive view in the app, it is guarded by
-`DASHBOARD_TOKEN`. This is an operator secret, not a caller key: it grants a
-view of *every* entry, so it is deliberately separate from the caller keys the
-API replays upstream, and no caller key opens it.
+Because that is the most sensitive view in the app, it is guarded twice: by an
+operator **account**, and optionally by a shared **token** in front of it.
+Neither is a caller key — a caller key buys a view of that caller's own entries
+through `/v1`, while these grant a view of everyone's, so no caller key opens
+the dashboard.
+
+### Accounts
+
+An account is always required. There is no registration route and **no password
+reset**: accounts are created on the server, which is what keeps the dashboard
+free of any unauthenticated route that could mint or recover access.
+
+```bash
+php artisan user:register
+```
+
+It prompts for a name, an address and a password that is never echoed. Pass
+`--name`, `--email` and `--password` to run it from a deploy script instead —
+that form does land in your shell history, which is why it is not the default.
+A forgotten password is replaced by registering again, or from the database.
+
+Failed logins are throttled at five per minute per address **and** IP. Only
+failures count, so mistyping once and then getting it right is not punished.
+
+### Token
+
+`DASHBOARD_TOKEN` is a second, shared secret sitting *in front of* the login.
 
 ```bash
 openssl rand -hex 32     # put the result in DASHBOARD_TOKEN
@@ -355,13 +378,32 @@ cookie and stripped from the URL, so it stays out of your history, out of
 `Referer` headers and out of the dashboard's own filter links. Scripts can send
 it as `Authorization: Bearer …` instead.
 
-Leave `DASHBOARD_TOKEN` empty and the dashboard is switched off entirely — it
-answers `404` rather than serving prompts to whoever finds the hostname. The
-`/v1` API is unaffected either way.
+It runs **before** the login, so a visitor without it is refused outright rather
+than being shown a form that tells them an account is what gets them in. That
+also means you present the token once per browser before you can reach the login
+page at all.
+
+Leave `DASHBOARD_TOKEN` empty and the login alone guards the dashboard. This
+reverses earlier behaviour, where an empty token switched the dashboard off with
+a `404` — that made sense while the token was the only guard, and no longer does
+now that a session is required either way. The `/v1` API is unaffected by both.
 
 ## Installation
 
-Requires PHP ≥ 8.5, Composer, PostgreSQL and a reachable LLM backend.
+Requires PHP ≥ 8.5, Composer, Node ≥ 24, PostgreSQL and a reachable LLM backend.
+
+The dashboard is built on `@codebar-ag/storybook`, which is published to **GitHub
+Packages rather than npmjs.com**. `.npmrc` points the `@codebar-ag` scope at that
+registry and reads the credential from `GITHUB_TOKEN`, so the variable must be
+exported before any `npm` command — otherwise the package cannot be resolved and
+the install fails:
+
+```bash
+export GITHUB_TOKEN=ghp_…          # a PAT with the `read:packages` scope
+```
+
+In CI the same variable comes from the `PACKAGES_TOKEN` secret. The token is
+never written to `.npmrc`; only the registry mapping is committed.
 
 ```bash
 composer install
@@ -379,7 +421,7 @@ Run it:
 
 ```bash
 php artisan serve --port=8080
-php artisan queue:work --queue=llm --tries=1 --timeout=960
+php artisan queue:work --queue=default --tries=1 --timeout=960
 ```
 
 Run as many workers as the backend handles in parallel — with Ollama that is
@@ -497,7 +539,7 @@ default deny:
 | Rule | Paths | Reachable |
 |---|---|---|
 | API | `/v1/…`, `/{gateway}/v1/…`, `/up` | yes — callers bring their own key |
-| Dashboard | `/`, `/entries/…`, `/gateways…`, `/build/…`, `/favicon.*` | yes — but `DASHBOARD_TOKEN` is required |
+| Dashboard | `/`, `/login`, `/entries/…`, `/gateways…`, `/build/…`, `/favicon.*` | yes — but a login is required |
 | everything else | `/storage/…`, `/index.php`, … | `404` before it reaches the origin |
 
 Delete the dashboard rule to keep it on the LAN only; the API keeps working and
@@ -570,7 +612,7 @@ DB_PASSWORD=
 GATEWAY_SEED_URL=https://litellm.internal.example   # seeds the default gateway
 GATEWAY_MAX_TIMEOUT=900                             # ceiling for any gateway
 
-BACKLOG_QUEUE=llm
+BACKLOG_QUEUE=default
 BACKLOG_WORKERS=2
 BACKLOG_RATE_LIMIT=60
 BACKLOG_ESTIMATE_DEFAULT_SECONDS=30                 # assumed wait before anything
@@ -605,7 +647,7 @@ hole — the entry sits in `queued` forever and the caller polls forever.
 For a terminal session:
 
 ```bash
-php artisan queue:work --queue=llm --tries=1 --timeout=960
+php artisan queue:work --queue=default --tries=1 --timeout=960
 ```
 
 To keep it running, use the launchd agent in `deploy/`. **Edit the paths
@@ -700,7 +742,7 @@ The ingress is **default deny** — three rules, evaluated top to bottom:
 | Rule | Paths | Reachable |
 |---|---|---|
 | API | `/v1/…`, `/{gateway}/v1/…`, `/up` | yes — callers bring their own key |
-| Dashboard | `/`, `/entries/…`, `/gateways…`, `/build/…`, `/favicon.*` | yes, but `DASHBOARD_TOKEN` is required |
+| Dashboard | `/`, `/login`, `/entries/…`, `/gateways…`, `/build/…`, `/favicon.*` | yes, but a login is required |
 | everything else | `/storage/…`, `/index.php`, … | `404` before it reaches the origin |
 
 Delete the dashboard rule to keep it on the LAN only. For a second factor in
@@ -743,13 +785,18 @@ swapped for an encrypted cookie and stripped from the URL, so it stays out of
 your history and out of `Referer` headers. Scripts can send it as
 `Authorization: Bearer <token>` instead.
 
-Leave `DASHBOARD_TOKEN` empty and the dashboard is switched off entirely — it
-answers `404` rather than serving prompts to whoever finds the hostname. The
+Then create the account you will actually log in with:
+
+```bash
+php artisan user:register
+```
+
+Leave `DASHBOARD_TOKEN` empty and the login alone guards the dashboard. The
 `/v1` API is unaffected either way.
 
-This is an **operator** secret. It shows every entry from every caller. It is
-deliberately not the same thing as the caller keys the API replays, which only
-ever see their own entries.
+Both are **operator** credentials: together they show every entry from every
+caller. They are deliberately not the same thing as the caller keys the API
+replays, which only ever see their own entries.
 
 #### 5. Verify end to end
 
@@ -804,10 +851,14 @@ port 80 against a secured site. See above.
 **You land on someone else's Herd site.** `httpHostHeader` is missing or does
 not match the local site name.
 
-**Dashboard answers 404.** `DASHBOARD_TOKEN` is empty. That is the deliberate
-"switched off" state, not a bug.
+**Dashboard answers 403.** `DASHBOARD_TOKEN` is set and yours is missing or
+wrong. Re-open with `?token=…`.
 
-**Dashboard answers 403.** Token missing or wrong. Re-open with `?token=…`.
+**Dashboard sends you to `/login` and you have no account.** Run
+`php artisan user:register` on the server. There is no reset link by design.
+
+**`/login` itself answers 403.** The token guard runs before the login, so you
+have to present `?token=…` once before the form is reachable at all.
 
 **`GET /v1/responses/{id}` returns 404 for an entry you just created.** You are
 polling with a different key than you queued with. Entries belong to the key

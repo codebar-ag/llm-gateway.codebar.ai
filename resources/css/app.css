@@ -1,10 +1,19 @@
+/*
+ | Tokens first, Tailwind second: the tokens are a `@theme` block and Tailwind
+ | has to see them before it emits utilities. The `@source` on the package's
+ | dist is not optional either — without it Tailwind never scans the compiled
+ | atoms, and none of their classes reach this stylesheet.
+ |
+ | The type scale, colours and the all-mono font come from the tokens, so this
+ | file deliberately defines no theme of its own.
+ */
+
+@import "@codebar-ag/storybook/tokens.css";
 @import "tailwindcss";
 
 @source "../views";
-
-@theme {
-    --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
-}
+@source "../js";
+@source "../../node_modules/@codebar-ag/storybook/dist";
 
 @layer base {
     a[href],
@@ -14,17 +23,4 @@
     [role="button"]:not(:disabled) {
         cursor: pointer;
     }
-}
-
-/* Server-rendered JSON highlighting (see App\Support\JsonHighlighter). */
-.json-key { color: #0369a1; }
-.json-string { color: #15803d; }
-.json-number { color: #b45309; }
-.json-const { color: #7e22ce; }
-
-@media (prefers-color-scheme: dark) {
-    .json-key { color: #7dd3fc; }
-    .json-string { color: #86efac; }
-    .json-number { color: #fcd34d; }
-    .json-const { color: #d8b4fe; }
 }

@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequireCallerKey;
 use App\Http\Middleware\ResolveGateway;
 use App\Http\Middleware\VerifyDashboardToken;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -38,10 +40,32 @@ return Application::configure(basePath: dirname(__DIR__))
             'gateway' => ResolveGateway::class,
         ]);
 
+        /*
+         | `['dashboard', 'auth']` on a route is not enough to make the token
+         | run first. Laravel sorts the resolved stack by its priority list,
+         | and `auth` is on that list while an aliased middleware of ours is
+         | not — so `auth` was hoisted in front and a request with no token got
+         | a redirect to the login instead of a flat 403, which tells an
+         | anonymous visitor that an account is what gets them in.
+         |
+         | The anchor is the `AuthenticatesRequests` *interface*, which is what
+         | the priority list actually holds. Naming `Authenticate` here matches
+         | nothing and silently appends to the end of the list instead, which
+         | is the opposite of what this asks for.
+         */
+        $middleware->prependToPriorityList(
+            before: AuthenticatesRequests::class,
+            prepend: VerifyDashboardToken::class,
+        );
+
         // Appended to the whole group rather than named per route: whether a
         // key is required is one deployment-wide answer, and it has to hold for
         // reading an entry back just as much as for queueing one.
         $middleware->api(append: [RequireCallerKey::class]);
+
+        // Web only. The /v1 API answers JSON and must never learn to negotiate
+        // an Inertia response.
+        $middleware->web(append: [HandleInertiaRequests::class]);
     })
     ->withExceptions(function (Exceptions $exceptions) use ($isApi) {
         $exceptions->shouldRenderJsonWhen($isApi);

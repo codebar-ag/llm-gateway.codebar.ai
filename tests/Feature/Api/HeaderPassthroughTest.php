@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Middleware\VerifyDashboardToken;
 use App\Jobs\ProcessBacklogEntry;
 use App\Models\BacklogEntry;
+use App\Models\User;
 use App\Services\Upstream\Upstreams;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
@@ -105,6 +106,7 @@ it('never leaks headers through the api', function () {
 it('never leaks headers on the dashboard', function () {
     config()->set('gateway.dashboard.token', dashboardToken());
     $this->withCookie(VerifyDashboardToken::COOKIE, dashboardToken());
+    $this->actingAs(User::factory()->create());
 
     $entry = BacklogEntry::factory()->create();
 

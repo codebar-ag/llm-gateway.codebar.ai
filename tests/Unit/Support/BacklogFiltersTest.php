@@ -13,13 +13,20 @@ function filtersFor(array $query): BacklogFilters
 }
 
 it('reads every filter off the query string', function () {
-    $filters = filtersFor(['status' => 'completed', 'model' => ' m ', 'q' => ' resp_1 ', 'gateway' => ' g ']);
+    $filters = filtersFor([
+        'status' => 'completed', 'model' => ' m ', 'q' => ' resp_1 ', 'gateway' => ' g ', 'caller' => ' c ',
+    ]);
 
     expect($filters->status)->toBe(BacklogStatus::Completed)
         ->and($filters->model)->toBe('m')
         ->and($filters->search)->toBe('resp_1')
         ->and($filters->gateway)->toBe('g')
+        ->and($filters->caller)->toBe('c')
         ->and($filters->areEmpty())->toBeFalse();
+});
+
+it('counts a caller on its own as a filter', function () {
+    expect(filtersFor(['caller' => 'anonymous'])->areEmpty())->toBeFalse();
 });
 
 it('reads an absent query string as no filter at all', function () {
@@ -33,7 +40,9 @@ it('reads an unknown status as no status filter', function () {
 /* A malformed URL is not a filter: `(string) $array` would be a 500. */
 
 it('ignores a filter sent as an array', function () {
-    $filters = filtersFor(['model' => ['a', 'b'], 'q' => ['x'], 'gateway' => ['g'], 'status' => ['queued']]);
+    $filters = filtersFor([
+        'model' => ['a', 'b'], 'q' => ['x'], 'gateway' => ['g'], 'status' => ['queued'], 'caller' => ['c'],
+    ]);
 
     expect($filters->areEmpty())->toBeTrue();
 });
@@ -45,6 +54,38 @@ it('narrows the query by each filter', function () {
     $matching = filtersFor(['status' => 'completed', 'model' => 'wanted'])->apply()->get();
 
     expect($matching->pluck('id')->all())->toBe([$wanted->id]);
+});
+
+it('narrows the query to one caller', function () {
+    $mine = BacklogEntry::factory()->create(['api_key_hash' => hash('sha256', 'sk-one')]);
+    BacklogEntry::factory()->create(['api_key_hash' => hash('sha256', 'sk-two')]);
+    BacklogEntry::factory()->create(['api_key_hash' => null]);
+
+    $matching = filtersFor(['caller' => hash('sha256', 'sk-one')])->apply()->get();
+
+    expect($matching->pluck('id')->all())->toBe([$mine->id]);
+});
+
+/*
+ | 'anonymous' is the sentinel the labels table stores the keyless bucket under,
+ | and it selects entries queued without a bearer token through the same
+ | `ownedBy` scope /v1/responses narrows by.
+ */
+
+it('reads the keyless sentinel as the entries queued without a key', function () {
+    $keyless = BacklogEntry::factory()->create(['api_key_hash' => null]);
+    BacklogEntry::factory()->create();
+
+    $matching = filtersFor(['caller' => 'anonymous'])->apply()->get();
+
+    expect($matching->pluck('id')->all())->toBe([$keyless->id]);
+});
+
+it('leaves the listing alone when no caller is chosen', function () {
+    BacklogEntry::factory()->count(2)->create();
+    BacklogEntry::factory()->create(['api_key_hash' => null]);
+
+    expect(filtersFor(['caller' => ' '])->apply()->count())->toBe(3);
 });
 
 it('matches an entry by an id prefix', function () {

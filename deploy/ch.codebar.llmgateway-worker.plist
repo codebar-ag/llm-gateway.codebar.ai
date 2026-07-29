@@ -22,7 +22,7 @@
         <string>/opt/homebrew/bin/php</string>
         <string>/PATH/TO/llm-gateway/artisan</string>
         <string>queue:work</string>
-        <string>--queue=llm</string>
+        <string>--queue=default</string>
         <string>--tries=1</string>
         <string>--timeout=960</string>
         <string>--sleep=1</string>

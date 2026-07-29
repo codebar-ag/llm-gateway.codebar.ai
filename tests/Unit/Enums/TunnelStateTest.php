@@ -13,7 +13,7 @@ it('has a label for every state', function (TunnelState $state, string $label) {
 ]);
 
 it('has badge classes for every state', function (TunnelState $state) {
-    expect($state->tone())->toBeIn(['emerald', 'red', 'neutral']);
+    expect($state->tone())->toBeIn(['neutral', 'info', 'success', 'warning', 'danger']);
 })->with(TunnelState::cases());
 
 it('uses distinct colours per state', function () {
