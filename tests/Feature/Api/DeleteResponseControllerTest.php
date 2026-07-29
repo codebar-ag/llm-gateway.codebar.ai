@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Middleware\VerifyDashboardToken;
 use App\Models\BacklogEntry;
+use App\Models\User;
 
 it('deletes an entry in any status', function (string $state) {
     $entry = BacklogEntry::factory()->{$state}()->create();
@@ -53,7 +54,8 @@ it('hides a deleted entry from the dashboard', function () {
 
     config()->set('gateway.dashboard.token', dashboardToken());
 
-    $this->withCookie(VerifyDashboardToken::COOKIE, dashboardToken())
+    $this->actingAs(User::factory()->create())
+        ->withCookie(VerifyDashboardToken::COOKIE, dashboardToken())
         ->get('/')
         ->assertOk()
         ->assertDontSee($entry->id);

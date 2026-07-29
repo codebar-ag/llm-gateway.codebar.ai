@@ -24,12 +24,12 @@ enum TunnelState: string
         };
     }
 
-    /** Which of the badge component's tones this state reads as. */
+    /** One of the design system's semantic tones, for Badge/StatusBadge. */
     public function tone(): string
     {
         return match ($this) {
-            self::Ready => 'emerald',
-            self::Down => 'red',
+            self::Ready => 'success',
+            self::Down => 'danger',
             self::Unknown => 'neutral',
         };
     }

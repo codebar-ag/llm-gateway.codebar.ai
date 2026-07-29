@@ -90,6 +90,16 @@ it('queues onto the configured queue', function () {
     Queue::assertPushedOn('custom-queue', ProcessBacklogEntry::class);
 });
 
+/*
+ | Deliberately reads the shipped default instead of setting one. The worker
+ | is started with an explicit `--queue=` in the deploy plists and the README,
+ | and a worker listening on a queue nothing dispatches to looks healthy while
+ | the backlog never drains.
+ */
+it('defaults to the default queue so the documented worker picks the work up', function () {
+    expect(config('gateway.backlog.queue'))->toBe('default');
+});
+
 it('generates unique ids', function () {
     $a = $this->backlog->add(backlogRequest(), []);
     $b = $this->backlog->add(backlogRequest(), []);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Enums\BacklogStatus;
+use App\Models\ApiKeyLabel;
 use App\Models\BacklogEntry;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ readonly class BacklogFilters
         public string $model,
         public string $search,
         public string $gateway,
+        public string $caller,
     ) {}
 
     public static function fromRequest(Request $request): self
@@ -35,6 +37,7 @@ readonly class BacklogFilters
             model: self::text($request, 'model'),
             search: self::text($request, 'q'),
             gateway: self::text($request, 'gateway'),
+            caller: self::text($request, 'caller'),
         );
     }
 
@@ -43,7 +46,8 @@ readonly class BacklogFilters
         return $this->status === null
             && $this->model === ''
             && $this->search === ''
-            && $this->gateway === '';
+            && $this->gateway === ''
+            && $this->caller === '';
     }
 
     /** @return Builder<BacklogEntry> */
@@ -53,6 +57,12 @@ readonly class BacklogFilters
             ->when($this->status, fn (Builder $query, BacklogStatus $status) => $query->where('status', $status))
             ->when($this->model !== '', fn (Builder $query) => $query->where('model', $this->model))
             ->when($this->gateway !== '', fn (Builder $query) => $query->where('gateway_id', $this->gateway))
+            // Through the same scope /v1/responses narrows by, so "this
+            // caller's entries" has one definition: the dashboard and the API
+            // cannot drift on what the keyless bucket contains.
+            ->when($this->caller !== '', fn (Builder $query) => $query->ownedBy(
+                $this->caller === ApiKeyLabel::ANONYMOUS ? null : $this->caller,
+            ))
             ->when($this->search !== '', fn (Builder $query) => $query->whereRaw(
                 'id like ? escape ?',
                 [self::prefixPattern($this->search), self::LIKE_ESCAPE],

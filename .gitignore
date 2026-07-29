@@ -14,7 +14,6 @@ docker-compose.override.yml
 npm-debug.log
 /.php-cs-fixer.cache
 .DS_STORE
-.npmrc
 
 database/seeders/LocalSeeder.php
 database/seeders/ProductionSeeder.php

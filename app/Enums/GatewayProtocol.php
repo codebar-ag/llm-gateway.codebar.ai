@@ -31,13 +31,13 @@ enum GatewayProtocol: string
         };
     }
 
-    /** Which of the badge component's tones this protocol reads as. */
+    /** One of the design system's semantic tones, for Badge/StatusBadge. */
     public function tone(): string
     {
         return match ($this) {
-            self::OpenAi => 'emerald',
-            self::Anthropic => 'amber',
-            self::Ollama => 'blue',
+            self::OpenAi => 'success',
+            self::Anthropic => 'warning',
+            self::Ollama => 'info',
         };
     }
 

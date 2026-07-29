@@ -32,10 +32,17 @@ return [
     | Dashboard
     |--------------------------------------------------------------------------
     |
-    | The dashboard shows whole prompts and answers, so it is guarded by one
-    | shared operator token rather than left open. This is not a caller key:
-    | it grants a view of every entry. Leave it empty and the dashboard is
-    | switched off entirely instead of being served unprotected.
+    | The dashboard shows whole prompts and answers, so it is guarded twice.
+    |
+    | An operator account is always required — created with
+    | `php artisan user:register`, since there is no registration route and no
+    | password reset. This token is a second, shared secret in front of that
+    | login, and it is optional: leave it empty and the login alone guards the
+    | dashboard; set it and a visitor must present it before they even reach
+    | the login form.
+    |
+    | Neither is a caller key. A caller key buys a view of that caller's own
+    | entries through /v1; these two together grant a view of everyone's.
     |
     */
 
@@ -118,7 +125,7 @@ return [
     */
 
     'backlog' => [
-        'queue' => strval(env('BACKLOG_QUEUE', 'llm')),
+        'queue' => strval(env('BACKLOG_QUEUE', 'default')),
         'workers' => intval(env('BACKLOG_WORKERS', 2)),
         'max_attempts' => intval(env('BACKLOG_MAX_ATTEMPTS', 2)),
         'retry_delay' => intval(env('BACKLOG_RETRY_DELAY', 10)),

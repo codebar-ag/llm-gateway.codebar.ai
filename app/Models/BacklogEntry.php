@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -98,6 +99,59 @@ class BacklogEntry extends Model
             ->groupBy('status')
             ->pluck('total', 'status')
             ->map(fn (mixed $total): int => is_numeric($total) ? (int) $total : 0);
+    }
+
+    /**
+     * What each caller has queued, one row per key hash.
+     *
+     * `toBase()` is deliberate. It keeps the soft-delete scope — global scopes
+     * are applied before the query is handed down — while returning plain rows
+     * instead of hydrating four-attribute models: under `Model::shouldBeStrict`
+     * anything later touching an attribute this SELECT did not name would raise
+     * a missing-attribute error rather than read a null.
+     *
+     * Types are narrowed here rather than at each caller, as `statusCounts()`
+     * does: `count(*)` is a string on Postgres and an integer on SQLite, and
+     * the aliased `min`/`max` bypass the model's date casts entirely.
+     *
+     * @return Collection<int, array{api_key_hash: string|null, entries: int, first_seen: CarbonImmutable, last_seen: CarbonImmutable}>
+     */
+    public static function callerActivity(): Collection
+    {
+        return static::query()
+            ->selectRaw('api_key_hash, count(*) as entries, min(created_at) as first_seen, max(created_at) as last_seen')
+            ->groupBy('api_key_hash')
+            ->toBase()
+            ->get()
+            ->map(function (object $row): array {
+                /** @var array<string, mixed> $values */
+                $values = (array) $row;
+
+                return [
+                    'api_key_hash' => is_string($values['api_key_hash'] ?? null) ? $values['api_key_hash'] : null,
+                    'entries' => is_numeric($values['entries'] ?? null) ? (int) $values['entries'] : 0,
+                    'first_seen' => self::aggregatedAt($values['first_seen'] ?? null),
+                    'last_seen' => self::aggregatedAt($values['last_seen'] ?? null),
+                ];
+            })
+            ->values();
+    }
+
+    /**
+     * An aliased timestamp read back as the app's own clock.
+     *
+     * An aggregate has no column to inherit a cast from, so it arrives as the
+     * driver's own text — with an offset from Postgres' timestamptz and without
+     * one from SQLite. Parsing then restating it in the configured zone is what
+     * makes the two agree. Each group holds at least one row and `created_at`
+     * is never null, so the fallback is unreachable rather than a moment
+     * quietly invented for an empty aggregate.
+     */
+    private static function aggregatedAt(mixed $value): CarbonImmutable
+    {
+        $moment = is_string($value) ? CarbonImmutable::parse($value) : CarbonImmutable::now();
+
+        return $moment->setTimezone(Config::string('app.timezone'));
     }
 
     /**

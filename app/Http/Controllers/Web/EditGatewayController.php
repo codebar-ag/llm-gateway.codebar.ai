@@ -4,19 +4,25 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web;
 
-use App\Enums\GatewayProtocol;
 use App\Models\Gateway;
-use Illuminate\Contracts\View\View;
+use App\Support\GatewayPayload;
 use Illuminate\Support\Facades\Config;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class EditGatewayController
 {
-    public function __invoke(Gateway $gateway): View
+    public function __invoke(Gateway $gateway): Response
     {
-        return view('gateways.form', [
-            'gateway' => $gateway,
-            'protocols' => GatewayProtocol::cases(),
+        return Inertia::render('Gateways/Form', [
+            'gateway' => GatewayPayload::form($gateway),
+            'protocols' => GatewayPayload::protocols(),
             'maxTimeout' => Config::integer('gateway.upstream.max_timeout'),
+            'editing' => true,
+            'urls' => [
+                'submit' => route('gateways.update', $gateway),
+                'index' => route('gateways'),
+            ],
         ]);
     }
 }

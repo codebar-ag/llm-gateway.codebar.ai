@@ -212,3 +212,63 @@ it('can be claimed again once it has been requeued', function () {
     expect($entry->claim())->toBeTrue()
         ->and($entry->attempts)->toBe(2);
 });
+
+it('counts what each caller has queued', function () {
+    BacklogEntry::factory()->count(3)->create(['api_key_hash' => hash('sha256', 'sk-one')]);
+    BacklogEntry::factory()->create(['api_key_hash' => hash('sha256', 'sk-two')]);
+
+    $activity = BacklogEntry::callerActivity()->keyBy('api_key_hash');
+
+    expect($activity)->toHaveCount(2)
+        ->and($activity[hash('sha256', 'sk-one')]['entries'])->toBe(3)
+        ->and($activity[hash('sha256', 'sk-two')]['entries'])->toBe(1);
+});
+
+it('groups entries queued without a key into one keyless caller', function () {
+    BacklogEntry::factory()->count(2)->create(['api_key_hash' => null]);
+    BacklogEntry::factory()->create();
+
+    $keyless = BacklogEntry::callerActivity()->firstWhere('api_key_hash', null);
+
+    expect(BacklogEntry::callerActivity())->toHaveCount(2)
+        ->and($keyless['entries'])->toBe(2);
+});
+
+it('leaves deleted entries out of a caller count', function () {
+    $hash = hash('sha256', 'sk-one');
+    BacklogEntry::factory()->count(2)->create(['api_key_hash' => $hash]);
+    BacklogEntry::factory()->create(['api_key_hash' => $hash])->delete();
+
+    expect(BacklogEntry::callerActivity()->firstWhere('api_key_hash', $hash)['entries'])->toBe(2);
+});
+
+it('drops a caller whose every entry has been deleted', function () {
+    BacklogEntry::factory()->create(['api_key_hash' => hash('sha256', 'sk-gone')])->delete();
+
+    expect(BacklogEntry::callerActivity())->toBeEmpty();
+});
+
+it('reports when a caller was first and last seen', function () {
+    $hash = hash('sha256', 'sk-one');
+    $first = CarbonImmutable::parse('2026-01-01 08:00:00');
+
+    BacklogEntry::factory()->create(['api_key_hash' => $hash, 'created_at' => $first]);
+    BacklogEntry::factory()->create(['api_key_hash' => $hash, 'created_at' => $first->addHours(5)]);
+    BacklogEntry::factory()->create(['api_key_hash' => $hash, 'created_at' => $first->addHour()]);
+
+    $caller = BacklogEntry::callerActivity()->firstWhere('api_key_hash', $hash);
+
+    expect($caller['first_seen'])->toBeInstanceOf(CarbonImmutable::class)
+        ->and($caller['first_seen']->toDateTimeString())->toBe('2026-01-01 08:00:00')
+        ->and($caller['last_seen']->toDateTimeString())->toBe('2026-01-01 13:00:00')
+        ->and($caller['first_seen']->timezoneName)->toBe(config('app.timezone'));
+});
+
+it('reports one moment for a caller with a single entry', function () {
+    $entry = BacklogEntry::factory()->create(['created_at' => CarbonImmutable::parse('2026-02-03 10:11:12')]);
+
+    $caller = BacklogEntry::callerActivity()->firstWhere('api_key_hash', $entry->api_key_hash);
+
+    expect($caller['first_seen']->toDateTimeString())->toBe('2026-02-03 10:11:12')
+        ->and($caller['last_seen']->toDateTimeString())->toBe('2026-02-03 10:11:12');
+});

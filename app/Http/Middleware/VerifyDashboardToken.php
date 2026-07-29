@@ -12,7 +12,6 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Cookie;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * The dashboard renders whole prompts and answers, so it is not public. One
@@ -24,7 +23,10 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * headers and the dashboard's own filter links. Scripts may send it as a
  * bearer token instead.
  *
- * With no token configured the dashboard does not exist at all.
+ * The token is not the only guard. A dashboard session is always required on
+ * top of it — see the `auth` middleware on the same routes — so with no token
+ * configured this middleware steps aside and the login form is what stands in
+ * the way. Setting one puts a second, shared secret in front of that form.
  */
 class VerifyDashboardToken
 {
@@ -39,8 +41,12 @@ class VerifyDashboardToken
     {
         $expected = Config::string('gateway.dashboard.token');
 
+        // No shared token configured: the login form behind this is the guard.
+        // This used to 404 the dashboard, which was right while a token was the
+        // only thing protecting it and is wrong now that a session is required
+        // regardless.
         if ($expected === '') {
-            throw new NotFoundHttpException('The dashboard is disabled. Set DASHBOARD_TOKEN to enable it.');
+            return $next($request);
         }
 
         if (self::matches($request->query(self::QUERY), $expected)) {

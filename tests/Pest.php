@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Http\Middleware\VerifyDashboardToken;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 /*
@@ -38,15 +40,17 @@ uses()->beforeEach(fn () => Http::preventStrayRequests())->in('Feature', 'Unit')
 uses()->beforeEach(fn () => Cache::flush())->in('Feature', 'Unit');
 
 /*
- | The dashboard is guarded by DASHBOARD_TOKEN. Every page test gets a
- | configured token and the cookie that goes with it, so the guard itself is
- | asserted in one place (Feature/Web/DashboardTokenTest) instead of everywhere.
+ | The dashboard has two guards: the shared DASHBOARD_TOKEN and the operator's
+ | own session. Every page test gets both, so each guard is asserted in one
+ | place — Feature/Web/DashboardTokenTest and Feature/Auth/LoginTest — instead
+ | of in every test that happens to open a page.
  */
 
 uses()->beforeEach(function () {
     config()->set('gateway.dashboard.token', dashboardToken());
 
     $this->withCookie(VerifyDashboardToken::COOKIE, dashboardToken());
+    $this->actingAs(User::factory()->create());
 })->in(
     'Feature/Web/ShowBacklogControllerTest.php',
     'Feature/Web/ShowBacklogEntryControllerTest.php',
@@ -62,4 +66,34 @@ function dashboardToken(): string
 function gatewayAuth(): array
 {
     return ['Authorization' => 'Bearer sk-test-caller'];
+}
+
+/**
+ * The props Inertia handed the page component.
+ *
+ * Inertia renders the root view with the whole page object, so the props are
+ * readable without decoding the `data-page` attribute — and without asserting
+ * on JSON-escaped HTML, where every URL slash arrives as `\/`.
+ *
+ * @return array<string, mixed>
+ */
+function inertiaProps(TestResponse $response): array
+{
+    /** @var array{props: array<string, mixed>} $page */
+    $page = $response->viewData('page');
+
+    return $page['props'];
+}
+
+/**
+ * The entry ids a backlog listing came back with, in order.
+ *
+ * @return array<int, string>
+ */
+function backlogIds(TestResponse $response): array
+{
+    /** @var array<int, array{id: string}> $entries */
+    $entries = inertiaProps($response)['entries'];
+
+    return array_column($entries, 'id');
 }

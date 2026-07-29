@@ -25,5 +25,5 @@ it('renders human readable labels', function (BacklogStatus $status, string $lab
 ]);
 
 it('provides badge classes for every case', function (BacklogStatus $status) {
-    expect($status->tone())->toBeIn(['amber', 'blue', 'emerald', 'red', 'neutral']);
+    expect($status->tone())->toBeIn(['neutral', 'info', 'success', 'warning', 'danger']);
 })->with(BacklogStatus::cases());

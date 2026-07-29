@@ -41,6 +41,13 @@ class GatewayRequest extends FormRequest
             'timeout' => ['required', 'integer', 'min:1', 'max:'.Config::integer('gateway.upstream.max_timeout')],
             'connect_timeout' => ['required', 'integer', 'min:1', 'max:120'],
             'is_active' => ['boolean'],
+            /*
+             | Validated here but deliberately absent from `validatedAttributes()`.
+             | Mass assigning it would write a second row claiming the flag, which
+             | the pgsql partial unique index rejects outright — moving the default
+             | is `Gateways::makeDefault()`'s transaction, not an attribute.
+             */
+            'is_default' => ['boolean'],
             'description' => ['nullable', 'string', 'max:1000'],
         ];
     }
