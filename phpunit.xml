@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">./app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="base64:F+mHMDBbavrsp/I3WYA5lDSwDJJI/0wQG4eM3csq/lo="/>
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <!--
+            The gateways migration seeds this as the default upstream, and
+            QUEUE_CONNECTION=sync runs the job inline, so without pinning it the
+            suite would post whatever the developer's own .env points at. `.invalid`
+            is reserved and can never resolve; Http::preventStrayRequests() in
+            tests/Pest.php is what actually fails the test.
+        -->
+        <env name="GATEWAY_SEED_URL" value="http://upstream.invalid"/>
+        <!--
+            Pinned to the shipped default so the suite asserts what the app does
+            rather than what the developer's own .env happens to say. Left
+            unpinned, a machine with TRUSTED_PROXIES=* silently turns the
+            X-Forwarded-For rate limit test into a no-op.
+        -->
+        <env name="TRUSTED_PROXIES" value="127.0.0.1,::1"/>
+    </php>
+</phpunit>

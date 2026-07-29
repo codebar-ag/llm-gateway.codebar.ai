@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    One queue worker = one concurrent LLM call. Run as many as the backend
+    handles in parallel (with Ollama: OLLAMA_NUM_PARALLEL, usually 2) by
+    copying this file with a different Label and log paths.
+
+    Check the php path with `which php` before loading — under Laravel Herd it
+    is not /opt/homebrew/bin/php.
+
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ch.codebar.llmgateway-worker.plist
+
+    After code changes: php artisan queue:restart
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ch.codebar.llmgateway-worker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/php</string>
+        <string>artisan</string>
+        <string>queue:work</string>
+        <string>--queue=llm</string>
+        <string>--tries=1</string>
+        <string>--timeout=960</string>
+        <string>--sleep=1</string>
+        <string>--max-time=3600</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/PATH/TO/llm-gateway</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>APP_ENV</key>
+        <string>production</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/PATH/TO/llm-gateway/storage/logs/worker.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/PATH/TO/llm-gateway/storage/logs/worker.err.log</string>
+</dict>
+</plist>

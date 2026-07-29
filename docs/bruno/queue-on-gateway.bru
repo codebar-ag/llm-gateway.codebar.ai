@@ -1,0 +1,39 @@
+meta {
+  name: Queue on a specific gateway
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{host}}/{{gateway}}/v1/chat/completions
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{key}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "model": "{{model}}",
+    "messages": [
+      { "role": "user", "content": "Say PONG" }
+    ]
+  }
+}
+
+docs {
+  The same request as `Queue chat completion`, addressed to one upstream
+  instead of the default. `gateway` is a gateway's id, copied from
+  `/gateways` in the dashboard.
+
+  Every `/v1` route answers under the prefix as well as without it, so an
+  SDK pointed at `{{host}}/{{gateway}}/v1` queues and polls against one
+  upstream. Leave the prefix off and the request goes to whichever gateway
+  is flagged as the default.
+
+  An unknown or deactivated id responds `404` with `error.type` set to
+  `gateway_not_found`.
+}

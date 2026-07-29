@@ -1,0 +1,58 @@
+name: Pull Request | Pest
+
+on: pull_request
+
+jobs:
+  pest:
+    runs-on: ubuntu-latest
+    name: pull-request | pest
+
+    env:
+      PHP_VERSION: 8.5
+      NODE_VERSION: 24
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP Environment
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: dom, curl, fileinfo, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, pgsql, pdo_pgsql, bcmath, intl
+          coverage: pcov
+
+      - name: Cache Composer Dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.composer/cache/files
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install Composer Dependencies
+        run: composer install --no-progress --prefer-dist --no-interaction --optimize-autoloader
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install NPM Dependencies
+        run: npm ci
+
+      - name: Build Frontend Assets
+        run: npm run build
+
+      # 100 is the actual, verified baseline (`herd coverage vendor/bin/pest
+      # --coverage --min=100`), not an aspirational number. Lower it here the
+      # day it's no longer true, with a note on what dropped and why.
+      - name: Execute Pest Tests
+        run: ./vendor/bin/pest --compact --coverage --min=100
+
+      - name: Store Log Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs
+          path: ./storage/logs

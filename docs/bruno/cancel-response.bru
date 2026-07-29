@@ -1,0 +1,21 @@
+meta {
+  name: Cancel response
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{host}}/v1/responses/{{responseId}}/cancel
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{key}}
+}
+
+docs {
+  Only works while the entry is still `queued` — `409` otherwise. A
+  running Ollama call can't be stopped cleanly, so `in_progress` is
+  never cancellable.
+}

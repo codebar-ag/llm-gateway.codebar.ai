@@ -1,0 +1,16 @@
+{
+    "preset": "laravel",
+    "rules": {
+        "phpdoc_types": false,
+        "declare_strict_types": true,
+        "blank_line_after_opening_tag": true
+    },
+    "paths": [
+        "app",
+        "bootstrap",
+        "config",
+        "database",
+        "routes",
+        "tests"
+    ]
+}

@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@source "../views";
+
+@theme {
+    --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+    a[href],
+    button:not(:disabled),
+    select,
+    summary,
+    [role="button"]:not(:disabled) {
+        cursor: pointer;
+    }
+}
+
+/* Server-rendered JSON highlighting (see App\Support\JsonHighlighter). */
+.json-key { color: #0369a1; }
+.json-string { color: #15803d; }
+.json-number { color: #b45309; }
+.json-const { color: #7e22ce; }
+
+@media (prefers-color-scheme: dark) {
+    .json-key { color: #7dd3fc; }
+    .json-string { color: #86efac; }
+    .json-number { color: #fcd34d; }
+    .json-const { color: #d8b4fe; }
+}

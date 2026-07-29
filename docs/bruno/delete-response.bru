@@ -1,0 +1,20 @@
+meta {
+  name: Delete response
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{host}}/v1/responses/{{responseId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{key}}
+}
+
+docs {
+  Removes the entry from the API only — a soft delete. The row is
+  kept forever; the backlog is the archive.
+}

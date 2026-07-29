@@ -1,0 +1,21 @@
+meta {
+  name: Show response
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{host}}/v1/responses/{{responseId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{key}}
+}
+
+docs {
+  Status and result for a single entry: `queued → in_progress →
+  completed | failed`, plus `cancelled`. Run "Create response" first —
+  it stores the new id in `{{responseId}}` for this environment.
+}

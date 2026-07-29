@@ -1,0 +1,27 @@
+meta {
+  name: List responses
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{host}}/v1/responses?status=failed&model={{model}}&limit=50
+  body: none
+  auth: none
+  params {
+    status: failed
+    model: {{model}}
+    limit: 50
+  }
+}
+
+headers {
+  Authorization: Bearer {{key}}
+}
+
+docs {
+  Your recent entries only, scoped by the same key that created them.
+  Not rate limited — polling/listing is the documented way to collect
+  answers. Filters are optional; drop `status`/`model`/`limit` to list
+  everything owned by this key.
+}

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Runs the Cloudflare Tunnel as a user agent, alongside the queue worker.
+
+    Copy to ~/Library/LaunchAgents/, replace the paths, then:
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ch.codebar.llmgateway-tunnel.plist
+
+    Needs the user to be logged in. If the machine has to come back on its own
+    after a reboot, use `sudo cloudflared service install` instead and symlink
+    deploy/cloudflared/config.yml into /etc/cloudflared/.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ch.codebar.llmgateway-tunnel</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/cloudflared</string>
+        <string>--config</string>
+        <string>/PATH/TO/llm-gateway/deploy/cloudflared/config.yml</string>
+        <string>tunnel</string>
+        <string>run</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/PATH/TO/llm-gateway/storage/logs/tunnel.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/PATH/TO/llm-gateway/storage/logs/tunnel.err.log</string>
+</dict>
+</plist>

@@ -1,0 +1,47 @@
+meta {
+  name: Create response
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{host}}/v1/responses
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{key}}
+  X-Litellm-Tag: invoices
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "model": "{{model}}",
+    "input": "Say PONG"
+  }
+}
+
+vars:post-response {
+  responseId: res.body.id
+}
+
+docs {
+  `202` in the Responses API shape. Save the returned `id` — it is
+  needed to poll, cancel or delete the entry, and only the key that
+  created it can do any of those (a mismatch is a `404`, not `403`).
+
+  Vision input follows the Responses API format:
+
+  {
+    "model": "{{model}}",
+    "priority": 10,
+    "input": [{"role": "user", "content": [
+      {"type": "input_text", "text": "Extract invoice number and total as JSON."},
+      {"type": "input_image", "image_url": "data:image/png;base64,…"}
+    ]}]
+  }
+
+  The answer lands in `output[0].content[0].text`.
+}

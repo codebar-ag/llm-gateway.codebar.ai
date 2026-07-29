@@ -1,0 +1,64 @@
+# Cloudflare Tunnel for the async gateway.
+#
+# Setup once:
+#   brew install cloudflared
+#   cloudflared tunnel login
+#   cloudflared tunnel create llm-async
+#   cloudflared tunnel route dns llm-async llm.async.example.com
+#
+# Then copy this file to ~/.cloudflared/config.yml (or symlink it) and fill in
+# the tunnel id below. The credentials file is written by `tunnel create` and
+# must stay out of version control.
+
+tunnel: llm-async
+credentials-file: /Users/YOU/.cloudflared/<TUNNEL-ID>.json
+
+# cloudflared answers /ready here once it is connected to the edge. The app
+# polls it for the tunnel indicator shown on the dashboard.
+metrics: 127.0.0.1:20241
+
+# Default deny: anything not matched by a rule below never reaches the origin.
+# Rules are evaluated top to bottom and `path` is a regex over the URL path, so
+# each surface is published on purpose rather than by omission.
+#
+# Herd routes by Host header, so the public name has to be rewritten to the
+# local site name — without `httpHostHeader` you land on Herd's default site.
+#
+# Point at :443, not :80. A site secured with `herd secure` answers port 80
+# with a 301 to https://<site>.test, which a public visitor cannot resolve.
+# The certificate is Herd's own, so `noTLSVerify` is required; the connection
+# never leaves the loopback interface. If the site is NOT secured, use
+# `service: http://127.0.0.1:80` and drop the two TLS lines.
+
+ingress:
+
+  # The API. Callers bring their own LiteLLM key; upstream decides whether it
+  # is any good. This is the only surface that has to be open to the world.
+  - hostname: llm.async.example.com
+    path: ^/(v1/|up$)
+    service: https://127.0.0.1:443
+    originRequest:
+      httpHostHeader: llm-gateway.codebar.test
+      originServerName: llm-gateway.codebar.test
+      noTLSVerify: true
+      connectTimeout: 30s
+
+  # The dashboard, plus the built assets and favicon it needs. Guarded by
+  # DASHBOARD_TOKEN in the app, so a leaked hostname is not enough to read
+  # anyone's prompts.
+  #
+  # Two ways to tighten this further:
+  #   - delete this block to keep the dashboard on the LAN only; the API above
+  #     keeps working and the token guard stays as the local-network guard.
+  #   - add a Cloudflare Access policy on the hostname (Zero Trust → Access →
+  #     Applications) for SSO in front of the token.
+  - hostname: llm.async.example.com
+    path: ^/($|entries/|build/|favicon\.)
+    service: https://127.0.0.1:443
+    originRequest:
+      httpHostHeader: llm-gateway.codebar.test
+      originServerName: llm-gateway.codebar.test
+      noTLSVerify: true
+      connectTimeout: 30s
+
+  - service: http_status:404
