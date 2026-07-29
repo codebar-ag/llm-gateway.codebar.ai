@@ -23,13 +23,14 @@ function gatewayAttributes(array $overrides = []): array
     ];
 }
 
-it('lists the gateways with the base url a caller would use', function () {
+it('lists the gateways with the caller base url shortened but still copyable', function () {
     $gateway = Gateway::default();
 
     $this->get(route('gateways'))
         ->assertOk()
         ->assertSee($gateway->name)
-        ->assertSee($gateway->callerBaseUrl())
+        ->assertSee('/'.substr($gateway->id, 0, 8).'…/v1')
+        ->assertSee('data-copy="'.$gateway->callerBaseUrl().'"', false)
         ->assertSee('default');
 });
 

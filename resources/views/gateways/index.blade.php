@@ -36,8 +36,7 @@
                     <th class="px-4 py-3 font-medium">Name</th>
                     <th class="px-4 py-3 font-medium">Protocol</th>
                     <th class="px-4 py-3 font-medium">Endpoint</th>
-                    <th class="px-4 py-3 font-medium">Base URL for callers</th>
-                    <th class="px-4 py-3 text-right font-medium">Timeout</th>
+                    <th class="px-4 py-3 font-medium">Caller base URL</th>
                     <th class="px-4 py-3 text-right font-medium">Entries</th>
                     <th class="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
@@ -63,10 +62,21 @@
                             <x-badge :tone="$gateway->protocol->tone()" class="inline-block px-2 py-0.5 text-xs">
                                 {{ $gateway->protocol->label() }}
                             </x-badge>
+                            <span class="mt-1 block text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                                {{ $gateway->timeout }}s / {{ $gateway->connect_timeout }}s connect
+                            </span>
                         </td>
-                        <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ $gateway->endpoint() }}</td>
-                        <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ $gateway->callerBaseUrl() }}</td>
-                        <td class="px-4 py-3 text-right tabular-nums">{{ $gateway->timeout }}s</td>
+                        <td class="px-4 py-3">
+                            <span class="block max-w-xs truncate font-mono text-xs text-slate-500 dark:text-slate-400"
+                                  title="{{ $gateway->endpoint() }}">{{ $gateway->endpoint() }}</span>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="flex items-center gap-2">
+                                <code class="font-mono text-xs text-slate-500 dark:text-slate-400"
+                                      title="{{ $gateway->callerBaseUrl() }}">/{{ substr($gateway->id, 0, 8) }}…/v1</code>
+                                <x-copy-button :value="$gateway->callerBaseUrl()" />
+                            </span>
+                        </td>
                         <td class="px-4 py-3 text-right tabular-nums">
                             <a href="{{ route('backlog', ['gateway' => $gateway->id]) }}" class="underline hover:text-slate-900 dark:hover:text-slate-100">
                                 {{ $gateway->entries_count }}
@@ -105,7 +115,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="px-4 py-12 text-center text-slate-400">
+                        <td colspan="6" class="px-4 py-12 text-center text-slate-400">
                             No gateways yet. Nothing can be queued until one exists.
                         </td>
                     </tr>
