@@ -131,6 +131,24 @@ return [
         */
 
         'rate_limit' => intval(env('BACKLOG_RATE_LIMIT', 60)),
+
+        /*
+        | What a caller is told about the wait when an entry is queued.
+        |
+        | The estimate is a projection from how long recent entries for the
+        | same model actually took, not a promise: `sample` is how many of
+        | them are measured, and `default_seconds` stands in until that many
+        | have been answered at all.
+        |
+        | Only the measurement is cached, for `ttl` seconds — a position is
+        | cheap to count and worthless once stale, so it is always read live.
+        */
+
+        'estimate' => [
+            'sample' => intval(env('BACKLOG_ESTIMATE_SAMPLE', 20)),
+            'default_seconds' => intval(env('BACKLOG_ESTIMATE_DEFAULT_SECONDS', 30)),
+            'ttl' => intval(env('BACKLOG_ESTIMATE_TTL', 5)),
+        ],
     ],
 
 ];

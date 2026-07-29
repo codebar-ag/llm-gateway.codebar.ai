@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Resources\BacklogEntryResource;
 use App\Services\Backlog;
+use App\Services\QueueEstimate;
 use App\Support\ChatPayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,11 +27,16 @@ class CreateResponseController
         'response_format' => 'response_format',
     ];
 
-    public function __invoke(Request $request, Backlog $backlog): JsonResponse
+    public function __invoke(Request $request, Backlog $backlog, QueueEstimate $estimate): JsonResponse
     {
         $entry = $backlog->add($request, $this->toChatRequest($request->json()->all()));
 
-        return (new BacklogEntryResource($entry))->response($request)->setStatusCode(202);
+        // Estimated after the insert, so the entry counts itself and the
+        // caller is told the line they are in rather than the one before it.
+        return (new BacklogEntryResource($entry))
+            ->withPlace($estimate->for($entry))
+            ->response($request)
+            ->setStatusCode(202);
     }
 
     /**

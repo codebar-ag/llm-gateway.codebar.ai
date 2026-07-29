@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\BacklogEntry;
+use Illuminate\Support\Facades\DB;
 
 it('lists entries newest first', function () {
     $old = BacklogEntry::factory()->create(['created_at' => now()->subMinute()]);
@@ -86,4 +87,28 @@ it('ignores an empty status filter rather than refusing it', function () {
 
 it('ignores a status filter sent as an array', function () {
     $this->getJson('/v1/responses?status[]=queued', gatewayAuth())->assertOk();
+});
+
+it('reports no queue place per row, whatever the list costs', function () {
+    BacklogEntry::factory()->count(2)->create();
+
+    $queries = 0;
+    DB::listen(function () use (&$queries): void {
+        $queries++;
+    });
+
+    $this->getJson('/v1/responses', gatewayAuth())
+        ->assertOk()
+        ->assertJsonPath('data.0.queue', null);
+
+    $forTwo = $queries;
+
+    BacklogEntry::factory()->count(18)->create();
+
+    $queries = 0;
+    $this->getJson('/v1/responses', gatewayAuth())->assertOk()->assertJsonCount(20, 'data');
+
+    // Ten times the rows for the same number of queries: a position counted
+    // per row would have made this grow with the page.
+    expect($queries)->toBe($forTwo);
 });

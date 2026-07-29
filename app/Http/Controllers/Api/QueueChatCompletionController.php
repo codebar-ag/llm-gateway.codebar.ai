@@ -6,12 +6,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Middleware\ResolveGateway;
 use App\Services\Backlog;
+use App\Services\QueueEstimate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class QueueChatCompletionController
 {
-    public function __invoke(Request $request, Backlog $backlog): JsonResponse
+    public function __invoke(Request $request, Backlog $backlog, QueueEstimate $estimate): JsonResponse
     {
         // The body goes upstream exactly as it arrived.
         $entry = $backlog->add($request, $request->json()->all());
@@ -23,6 +24,9 @@ class QueueChatCompletionController
             'model' => $entry->model,
             'created' => $entry->created_at->timestamp,
             'poll_url' => self::pollUrl($request, $entry->id),
+            // The same block `/v1/responses` returns, from the same service:
+            // both doors onto one queue have to quote one wait.
+            'queue' => $estimate->for($entry)?->toArray(),
         ], 202);
     }
 

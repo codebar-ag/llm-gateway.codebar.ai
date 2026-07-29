@@ -107,3 +107,31 @@ it('does not return metadata it no longer keeps', function () {
         'model' => 'm', 'input' => 'x', 'metadata' => ['a' => 1],
     ], gatewayAuth())->assertStatus(202)->assertJsonMissingPath('metadata');
 });
+
+it('tells the caller where they landed in the queue', function () {
+    config()->set('gateway.backlog.workers', 1);
+    config()->set('gateway.backlog.estimate.default_seconds', 30);
+
+    BacklogEntry::factory()->count(2)->create(['created_at' => now()->subMinute()]);
+
+    $this->postJson('/v1/responses', ['model' => 'm', 'input' => 'x'], gatewayAuth())
+        ->assertStatus(202)
+        // Third in line, so the entry counts itself: estimating before the
+        // insert would report the queue the caller just missed.
+        ->assertJsonPath('queue.position', 3)
+        ->assertJsonPath('queue.depth', 3)
+        ->assertJsonPath('queue.workers', 1)
+        ->assertJsonPath('queue.estimated_seconds', 90);
+});
+
+it('quotes the same wait as the chat completions door', function () {
+    BacklogEntry::factory()->count(2)->create(['created_at' => now()->subMinute()]);
+
+    $responses = $this->postJson('/v1/responses', ['model' => 'm', 'input' => 'x'], gatewayAuth());
+    $chat = $this->postJson('/v1/chat/completions', ['model' => 'm', 'messages' => []], gatewayAuth());
+
+    expect($chat->json('queue.position'))->toBe($responses->json('queue.position') + 1)
+        ->and($chat->json('queue.workers'))->toBe($responses->json('queue.workers'))
+        ->and($chat->json('queue.estimated_seconds'))
+        ->toBeGreaterThanOrEqual($responses->json('queue.estimated_seconds'));
+});

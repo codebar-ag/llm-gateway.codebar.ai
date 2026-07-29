@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Middleware\VerifyDashboardToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -25,6 +26,16 @@ uses(TestCase::class, RefreshDatabase::class)->in('Feature', 'Unit');
  */
 
 uses()->beforeEach(fn () => Http::preventStrayRequests())->in('Feature', 'Unit');
+
+/*
+ | RefreshDatabase rolls the database back between tests, but the array cache
+ | store lives for the whole process. QueueEstimate caches its per-model
+ | measurement, so without this a median measured from one test's entries
+ | would be served to the next test that happens to draw the same model out
+ | of the factory — passing or failing depending on test order.
+ */
+
+uses()->beforeEach(fn () => Cache::flush())->in('Feature', 'Unit');
 
 /*
  | The dashboard is guarded by DASHBOARD_TOKEN. Every page test gets a

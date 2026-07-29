@@ -131,6 +131,64 @@ class BacklogEntry extends Model
     }
 
     /**
+     * How many queued entries a worker reaches before this one.
+     *
+     * Ordered by `(created_at, id)` rather than `created_at` alone, the same
+     * pair the dashboard pages by: entries queued within the same tick share
+     * a timestamp, and a position that cannot break that tie would report two
+     * callers as both being third.
+     */
+    public static function queuedAhead(self $entry): int
+    {
+        return static::query()
+            ->where('status', BacklogStatus::Queued)
+            ->where(function (Builder $query) use ($entry): void {
+                $query->where('created_at', '<', $entry->created_at)
+                    ->orWhere(fn (Builder $query) => $query
+                        ->where('created_at', $entry->created_at)
+                        ->where('id', '<', $entry->id));
+            })
+            ->count();
+    }
+
+    /** How many entries are waiting, across every caller and gateway. */
+    public static function queuedDepth(): int
+    {
+        return static::query()->where('status', BacklogStatus::Queued)->count();
+    }
+
+    /** How many entries a worker is busy with, and so cannot start another for. */
+    public static function runningCount(): int
+    {
+        return static::query()->where('status', BacklogStatus::Running)->count();
+    }
+
+    /**
+     * How long the last few answers for a model took, newest first.
+     *
+     * The measurement behind an estimate. Only completed entries are read:
+     * a failure's duration is how long the upstream took to give up, which
+     * says nothing about how long an answer takes.
+     *
+     * @return Collection<int, int>
+     */
+    public static function recentDurations(?string $model, int $limit): Collection
+    {
+        return static::query()
+            ->where('status', BacklogStatus::Completed)
+            ->whereNotNull('started_at')
+            ->whereNotNull('finished_at')
+            ->when($model !== null, fn (Builder $query) => $query->where('model', $model))
+            ->latest()
+            ->limit($limit)
+            ->get()
+            // Both timestamps are non-null by the query above, so the
+            // coalesce is unreachable rather than a silently counted zero.
+            ->map(fn (self $entry): int => $entry->durationSeconds() ?? 0)
+            ->values();
+    }
+
+    /**
      * Entries belong to the key that queued them, so a caller only ever sees
      * their own. A request with no bearer token owns the entries that were
      * likewise queued without one, which is the same rule stated for the

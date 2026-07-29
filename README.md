@@ -100,9 +100,9 @@ provide. This is that same tool, published as-is.
 
 | Endpoint | Behaviour |
 |---|---|
-| `POST /v1/chat/completions` | queued — `202` with `id` and `poll_url` |
-| `POST /v1/responses` | queued — `202` in the Responses API shape |
-| `GET /v1/responses/{id}` | status and result — your own entries only |
+| `POST /v1/chat/completions` | queued — `202` with `id`, `poll_url` and `queue` |
+| `POST /v1/responses` | queued — `202` in the Responses API shape, plus `queue` |
+| `GET /v1/responses/{id}` | status, result and `queue` — your own entries only |
 | `GET /v1/responses` | your recent entries; `?status=failed&model=…&limit=50` |
 | `POST /v1/responses/{id}/cancel` | only while `queued`, otherwise `409` |
 | `DELETE /v1/responses/{id}` | remove the entry from the API; the row is kept |
@@ -130,6 +130,49 @@ Cancelling is only offered while an entry is `queued`: a running Ollama request
 cannot be stopped cleanly, so cancelling `in_progress` would promise something
 this app cannot keep. Retries are the loop back to `queued` — they live on the
 entry, not in the queue, which is why workers run with `--tries=1`.
+
+### Knowing how long the wait is
+
+Anything that reports a `queued` entry carries a `queue` block. It sits in a key
+of its own so the Responses API fields around it stay exactly as an SDK expects:
+
+```json
+{
+  "id": "resp_019...",
+  "object": "response",
+  "status": "queued",
+  "model": "qwen3-vl:30b-a3b",
+  "output": [],
+  "queue": {
+    "position": 3,
+    "depth": 7,
+    "workers": 2,
+    "estimated_seconds": 84,
+    "estimated_completion_at": 1785000084
+  }
+}
+```
+
+`position` counts the entry itself, so first in line is `1`. `depth` is the whole
+backlog, not just your own entries. `estimated_seconds` runs through to *your*
+answer rather than to the moment a worker picks the entry up — it is the number
+worth showing a user who is waiting for a result.
+
+The block is `null` for any entry that is no longer waiting, so `queue` flipping
+to `null` is the same signal as `status` leaving `queued`. Polling a queued entry
+also answers `Retry-After`, which is the only backoff hint the poll endpoint
+gives — reads are deliberately unthrottled.
+
+The estimate is a projection, not a promise. It is the median of how long recent
+answers for the same model actually took, multiplied by how many rounds of work
+sit in front of you at the configured `BACKLOG_WORKERS`. A model nobody has asked
+yet borrows the median across all models, and a backlog that has answered nothing
+at all falls back to `BACKLOG_ESTIMATE_DEFAULT_SECONDS`.
+
+What it cannot see is a model swap. A request that forces Ollama to load a
+different model takes far longer than one on a model already in RAM, and a median
+over past answers has no way to know a swap is coming — so expect a queue with
+several models interleaved to run longer than it says.
 
 Every one of these also answers under a gateway id — `POST /{id}/v1/chat/completions`,
 `GET /{id}/v1/responses/{entry}`, and so on — so an SDK configured with
@@ -386,9 +429,9 @@ sequenceDiagram
 
     C->>G: POST /v1/responses
     G->>D: store — gateway frozen, headers encrypted
-    G-->>C: 202 { id, poll_url }
+    G-->>C: 202 { id, poll_url, queue }
     C->>G: GET /v1/responses/{id}
-    G-->>C: queued
+    G-->>C: queued + position and estimate
     W->>D: claim — queued to in_progress
     W->>U: replay or translate, with the caller's key
     U-->>W: answer
@@ -526,6 +569,8 @@ GATEWAY_MAX_TIMEOUT=900                             # ceiling for any gateway
 BACKLOG_QUEUE=llm
 BACKLOG_WORKERS=2
 BACKLOG_RATE_LIMIT=60
+BACKLOG_ESTIMATE_DEFAULT_SECONDS=30                 # assumed wait before anything
+                                                    # has been answered
 
 DASHBOARD_TOKEN=              # openssl rand -hex 32 — see step 4
 TUNNEL_METRICS_URL=http://127.0.0.1:20241
@@ -583,8 +628,9 @@ launchctl print gui/$(id -u)/ch.codebar.llmgateway-worker | head -20
 
 Run one worker per concurrent call you want. Copy the plist with a different
 `Label` and log paths for a second. Keep the count in step with
-`BACKLOG_WORKERS` — that value is what the dashboard reports, it does not spawn
-anything.
+`BACKLOG_WORKERS` — that value spawns nothing, it is what the dashboard reports
+and what queue estimates divide the backlog by, so a wrong number quietly makes
+every wait a caller is quoted wrong too.
 
 After changing code: `php artisan queue:restart`.
 

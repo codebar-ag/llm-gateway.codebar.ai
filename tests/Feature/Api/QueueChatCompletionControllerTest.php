@@ -91,3 +91,18 @@ it('takes max attempts from the configuration', function () {
 
     expect(BacklogEntry::find($id)->max_attempts)->toBe(4);
 });
+
+it('tells the caller where they landed in the queue', function () {
+    config()->set('gateway.backlog.workers', 2);
+    config()->set('gateway.backlog.estimate.default_seconds', 30);
+
+    BacklogEntry::factory()->count(3)->create(['created_at' => now()->subMinute()]);
+
+    $this->postJson('/v1/chat/completions', ['model' => 'm', 'messages' => []], gatewayAuth())
+        ->assertStatus(202)
+        ->assertJsonPath('queue.position', 4)
+        ->assertJsonPath('queue.depth', 4)
+        ->assertJsonPath('queue.workers', 2)
+        // Fourth across two workers is the second round of answers.
+        ->assertJsonPath('queue.estimated_seconds', 60);
+});

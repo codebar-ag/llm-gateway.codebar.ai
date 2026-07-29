@@ -50,3 +50,48 @@ it('is not wrapped in a data envelope', function () {
         ->assertJsonPath('id', $entry->id)
         ->assertJsonMissingPath('data');
 });
+
+it('reports a place in line while the entry is still waiting', function () {
+    config()->set('gateway.backlog.workers', 1);
+    config()->set('gateway.backlog.estimate.default_seconds', 30);
+
+    BacklogEntry::factory()->count(2)->create(['created_at' => now()->subMinute()]);
+    $mine = BacklogEntry::factory()->create();
+
+    $this->getJson("/v1/responses/{$mine->id}", gatewayAuth())
+        ->assertOk()
+        ->assertJsonPath('queue.position', 3)
+        ->assertJsonPath('queue.estimated_seconds', 90)
+        ->assertHeader('Retry-After', '90');
+});
+
+it('recomputes the position as the line moves rather than freezing it', function () {
+    $ahead = BacklogEntry::factory()->count(2)->create(['created_at' => now()->subMinute()]);
+    $mine = BacklogEntry::factory()->create();
+
+    expect($this->getJson("/v1/responses/{$mine->id}", gatewayAuth())->json('queue.position'))->toBe(3);
+
+    $ahead->first()->markCompleted('done', []);
+
+    expect($this->getJson("/v1/responses/{$mine->id}", gatewayAuth())->json('queue.position'))->toBe(2);
+});
+
+it('drops the queue block once the entry is no longer waiting', function () {
+    $entry = BacklogEntry::factory()->completed('hi')->create();
+
+    $this->getJson("/v1/responses/{$entry->id}", gatewayAuth())
+        ->assertOk()
+        ->assertJsonPath('queue', null)
+        ->assertHeaderMissing('Retry-After');
+});
+
+it('never tells a client to retry immediately', function () {
+    config()->set('gateway.backlog.estimate.default_seconds', 0);
+
+    $entry = BacklogEntry::factory()->create();
+
+    $this->getJson("/v1/responses/{$entry->id}", gatewayAuth())
+        ->assertOk()
+        ->assertJsonPath('queue.estimated_seconds', 0)
+        ->assertHeader('Retry-After', '1');
+});
