@@ -180,7 +180,11 @@ Every one of these also answers under a gateway id — `POST /{id}/v1/chat/compl
 See [Gateways](#gateways).
 
 A ready-to-run [Bruno](https://www.usebruno.com) collection covering every
-endpoint lives in [`docs/bruno`](docs/bruno).
+endpoint lives in [`docs/bruno`](docs/bruno) — open the folder to get the
+request chaining and the `local`/`public` environments. For a single file to
+import instead, [`docs/openapi.yaml`](docs/openapi.yaml) is the whole API as an
+OpenAPI 3.0 document, which Bruno, Postman and Insomnia all read. See the
+collection's [README](docs/bruno/README.md).
 
 ## Gateways
 

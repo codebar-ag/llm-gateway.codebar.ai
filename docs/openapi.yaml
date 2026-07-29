@@ -1,0 +1,501 @@
+openapi: 3.0.3
+
+info:
+  title: LLM Gateway
+  version: "1.0.0"
+  description: |
+    An asynchronous front door for an LLM backend. Every call is **queued** and
+    answered later — nothing here proxies a request synchronously, and there is
+    no streaming.
+
+    ## Passthrough
+
+    The gateway holds no credentials and validates nothing. There is no master
+    key, no shared secret, no user table. Whatever `Authorization` you send is
+    stored with the entry and replayed upstream unchanged; the upstream decides
+    whether it is any good. A wrong key is queued like everything else and then
+    fails with the upstream's own error stored verbatim.
+
+    The body goes upstream untouched — unknown fields are not stripped, a
+    missing `model` is not an error, `stream: true` is not refused (and is
+    stored as the raw stream rather than parsed text). Headers are replayed
+    from a fixed allowlist: `Authorization`, `Content-Type`, `Accept`,
+    `Accept-Language`, `User-Agent`, `X-Request-Id`, and anything prefixed
+    `X-Litellm-`, `OpenAI-` or `Anthropic-`. Everything else is dropped.
+
+    ## Ownership
+
+    An entry belongs to the key that queued it. Read, cancel or delete it with
+    the same `Authorization` you used to create it. No other key can see that
+    it exists — a mismatch is `404`, never `403`, so the API never confirms an
+    id it will not serve.
+
+    Only a SHA-256 hash of the bearer token is kept. Queueing without a key
+    works and produces an entry owned by "no key", readable by any request that
+    likewise sends none. Set `API_REQUIRE_CALLER_KEY=true` and every `/v1`
+    route answers `401` until a caller sends one.
+
+    ## Statuses
+
+    `queued → in_progress → completed | failed`, plus `cancelled` for entries
+    stopped before a worker claimed them. Retries loop back to `queued`; they
+    live on the entry, not in the queue.
+
+    ## Rate limiting
+
+    Queueing is limited per caller key (`BACKLOG_RATE_LIMIT`, default 60/min) —
+    per IP if you send none — because an entry costs a row and a worker slot
+    before the upstream has seen it. Going over returns `429` with
+    `Retry-After`. **Reading is never throttled**; polling is the documented way
+    to collect an answer.
+
+  license:
+    name: MIT
+
+servers:
+  - url: https://llm.example.com{gatewayPrefix}
+    description: |
+      Set the host to your own. `gatewayPrefix` addresses one registered
+      upstream instead of the default.
+    variables:
+      gatewayPrefix:
+        default: ""
+        description: |
+          Empty to use the gateway flagged as default. Set to `/{gateway-id}`
+          — a UUID copied from the dashboard's Gateways page — to pin every
+          call to one upstream. Every route below answers under the prefix as
+          well as without it, so an SDK configured with
+          `base_url = https://your-host/{id}/v1` queues *and* polls against
+          that one upstream.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Queue
+    description: Creating entries. Rate limited.
+  - name: Collect
+    description: Reading, cancelling and deleting entries. Never throttled.
+  - name: Health
+
+paths:
+
+  /up:
+    get:
+      tags: [Health]
+      summary: Liveness
+      description: Answers `200` once the app has booted. No authentication.
+      security: []
+      responses:
+        "200":
+          description: The app is up.
+
+  /v1/chat/completions:
+    post:
+      tags: [Queue]
+      summary: Queue a chat completion
+      description: |
+        Accepts an OpenAI chat-completion body and queues it. The body is
+        forwarded upstream exactly as it arrived.
+
+        Returns `202` immediately with a `poll_url`. The answer is collected
+        from `GET /v1/responses/{id}` — the id is the same either way, because
+        both doors open onto one queue.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Any OpenAI-compatible chat-completion body.
+              properties:
+                model:
+                  type: string
+                messages:
+                  type: array
+                  items:
+                    type: object
+                priority:
+                  type: integer
+                  description: Higher runs sooner. Optional.
+              additionalProperties: true
+            example:
+              model: qwen3-vl:30b-a3b
+              messages:
+                - role: user
+                  content: Say PONG
+      responses:
+        "202":
+          description: Queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedChatCompletion"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/GatewayNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /v1/responses:
+    post:
+      tags: [Queue]
+      summary: Queue a response
+      description: |
+        The Responses API shape. This is the one exception to passthrough on
+        the caller's side: the request is translated into a chat completion,
+        because LiteLLM cannot serve `/v1/responses` from an Ollama backend.
+
+        Vision input follows the Responses API format — `input` as an array of
+        message objects whose `content` mixes `input_text` and `input_image`
+        parts. The answer lands in `output[0].content[0].text`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                input:
+                  description: A string, or an array of Responses API messages.
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: object
+                priority:
+                  type: integer
+                  description: Higher runs sooner. Optional.
+              additionalProperties: true
+            examples:
+              text:
+                summary: Plain text
+                value:
+                  model: qwen3-vl:30b-a3b
+                  input: Say PONG
+              vision:
+                summary: Vision input
+                value:
+                  model: qwen3-vl:30b-a3b
+                  priority: 10
+                  input:
+                    - role: user
+                      content:
+                        - type: input_text
+                          text: Extract invoice number and total as JSON.
+                        - type: input_image
+                          image_url: "data:image/png;base64,…"
+      responses:
+        "202":
+          description: Queued, in the Responses API shape.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/GatewayNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+    get:
+      tags: [Collect]
+      summary: List your entries
+      description: |
+        Your recent entries only, scoped to the key that queued them. Filters
+        are optional. An unknown `status` is refused with `422` rather than
+        silently reading as "no entries".
+
+        Listing reports no `queue` block: counting a position per row would be
+        a query per entry on the endpoint that returns the most of them.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Status"
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Your entries, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object:
+                    type: string
+                    enum: [list]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Response"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Unknown `status` filter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/responses/{id}:
+    parameters:
+      - $ref: "#/components/parameters/EntryId"
+
+    get:
+      tags: [Collect]
+      summary: Show one entry
+      description: |
+        Status, result and `queue` for a single entry. This is the polling
+        endpoint — it is never rate limited, and a queued entry also answers
+        `Retry-After`, which is the only backoff hint given.
+
+        `queue` is `null` for anything no longer waiting, so `queue` turning
+        `null` is the same signal as `status` leaving `queued`.
+      responses:
+        "200":
+          description: The entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+          headers:
+            Retry-After:
+              description: Present while the entry is `queued`.
+              schema:
+                type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotYours"
+
+    delete:
+      tags: [Collect]
+      summary: Delete an entry
+      description: |
+        Removes the entry from the API. The row is kept — this is a soft
+        delete, and the backlog remains the archive.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  object:
+                    type: string
+                    enum: [response.deleted]
+                  deleted:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotYours"
+
+  /v1/responses/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/EntryId"
+
+    post:
+      tags: [Collect]
+      summary: Cancel a queued entry
+      description: |
+        Only while the entry is `queued`. A request already handed to the
+        backend cannot be stopped cleanly, so cancelling `in_progress` would
+        promise something this app cannot keep — that returns `409`.
+      responses:
+        "200":
+          description: Cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotYours"
+        "409":
+          description: Not cancellable — the entry has already left `queued`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Replayed upstream unchanged and never validated here. It also decides
+        ownership: only this key can read back what it queued.
+
+  parameters:
+    EntryId:
+      name: id
+      in: path
+      required: true
+      description: The id returned when the entry was queued.
+      schema:
+        type: string
+
+  schemas:
+
+    Status:
+      type: string
+      enum: [queued, in_progress, completed, failed, cancelled]
+
+    Queue:
+      type: object
+      nullable: true
+      description: |
+        Present on anything still waiting, `null` otherwise. The estimate is a
+        projection, not a promise: the median of how long recent answers for
+        the same model actually took, multiplied by how many rounds of work sit
+        in front of you at the configured worker count. It cannot see a model
+        swap coming, so a queue with several models interleaved runs longer
+        than it says.
+      properties:
+        position:
+          type: integer
+          description: Counts the entry itself — first in line is `1`.
+        depth:
+          type: integer
+          description: The whole backlog, not just your own entries.
+        workers:
+          type: integer
+        estimated_seconds:
+          type: integer
+          description: Through to *your* answer, not to a worker picking it up.
+        estimated_completion_at:
+          type: integer
+          description: Unix timestamp.
+
+    QueuedChatCompletion:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [chat.completion.queued]
+        status:
+          $ref: "#/components/schemas/Status"
+        model:
+          type: string
+          nullable: true
+        created:
+          type: integer
+        poll_url:
+          type: string
+          description: |
+            Path to poll, answered under whichever prefix you called — a client
+            with `base_url = /{gateway}/v1` is never handed a path outside it.
+        queue:
+          $ref: "#/components/schemas/Queue"
+
+    Response:
+      type: object
+      description: |
+        The OpenAI Responses API shape. `queue` is the one addition, kept in a
+        key of its own so the spec's own fields stay exactly as an SDK expects.
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [response]
+        created_at:
+          type: integer
+        status:
+          $ref: "#/components/schemas/Status"
+        model:
+          type: string
+          nullable: true
+        output:
+          type: array
+          description: Empty until the entry completes.
+          items:
+            type: object
+        usage:
+          type: object
+          nullable: true
+        error:
+          type: object
+          nullable: true
+          description: The upstream's own error, stored verbatim.
+        queue:
+          $ref: "#/components/schemas/Queue"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+              description: |
+                `async_only`, `gateway_not_found`, `invalid_request` or
+                `invalid_state`.
+
+  responses:
+
+    Unauthorized:
+      description: |
+        Only when `API_REQUIRE_CALLER_KEY=true`. It checks that a key *was*
+        sent, never whether it is any good — that stays the upstream's call.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    NotYours:
+      description: |
+        No such entry **for this key**. A mismatch is deliberately `404` rather
+        than `403`, so the API never confirms an id it will not serve.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    GatewayNotFound:
+      description: |
+        The gateway id in the path is unknown or deactivated
+        (`gateway_not_found`). Anything else unmatched under `/v1` answers
+        `404` with `async_only`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    RateLimited:
+      description: Too many entries queued. Reading is never throttled.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

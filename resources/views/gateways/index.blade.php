@@ -34,7 +34,10 @@
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <tr>
                     <th class="px-4 py-3 font-medium">Name</th>
+                    <th class="px-4 py-3 font-medium">Default</th>
+                    <th class="px-4 py-3 font-medium">Active</th>
                     <th class="px-4 py-3 font-medium">Protocol</th>
+                    <th class="px-4 py-3 font-medium">Default model</th>
                     <th class="px-4 py-3 font-medium">Endpoint</th>
                     <th class="px-4 py-3 font-medium">Caller base URL</th>
                     <th class="px-4 py-3 text-right font-medium">Entries</th>
@@ -44,28 +47,15 @@
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                 @forelse ($gateways as $gateway)
                     <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td class="px-4 py-3">
-                            <span class="font-medium">{{ $gateway->name }}</span>
-                            <span class="mt-1 flex flex-wrap gap-1">
-                                @if ($gateway->is_default)
-                                    <x-badge tone="emerald" class="px-2 py-0.5 text-xs">default</x-badge>
-                                @endif
-                                @unless ($gateway->is_active)
-                                    <x-badge tone="neutral" class="px-2 py-0.5 text-xs">inactive</x-badge>
-                                @endunless
-                                @if ($gateway->default_model)
-                                    <x-badge tone="blue" class="px-2 py-0.5 text-xs">{{ $gateway->default_model }}</x-badge>
-                                @endif
-                            </span>
-                        </td>
+                        <td class="px-4 py-3 font-medium">{{ $gateway->name }}</td>
+                        <td class="px-4 py-3 {{ $gateway->is_default ? 'font-medium text-emerald-700 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500' }}">{{ $gateway->is_default ? 'yes' : 'no' }}</td>
+                        <td class="px-4 py-3 {{ $gateway->is_active ? '' : 'font-medium text-red-700 dark:text-red-400' }}">{{ $gateway->is_active ? 'yes' : 'no' }}</td>
                         <td class="px-4 py-3">
                             <x-badge :tone="$gateway->protocol->tone()" class="inline-block px-2 py-0.5 text-xs">
                                 {{ $gateway->protocol->label() }}
                             </x-badge>
-                            <span class="mt-1 block text-xs tabular-nums text-slate-500 dark:text-slate-400">
-                                {{ $gateway->timeout }}s / {{ $gateway->connect_timeout }}s connect
-                            </span>
                         </td>
+                        <td class="px-4 py-3 font-mono text-xs {{ $gateway->default_model ? 'text-slate-500 dark:text-slate-400' : 'text-slate-300 dark:text-slate-600' }}">{{ $gateway->default_model ?: '—' }}</td>
                         <td class="px-4 py-3">
                             <span class="block max-w-xs truncate font-mono text-xs text-slate-500 dark:text-slate-400"
                                   title="{{ $gateway->endpoint() }}">{{ $gateway->endpoint() }}</span>
@@ -115,7 +105,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="px-4 py-12 text-center text-slate-400">
+                        <td colspan="9" class="px-4 py-12 text-center text-slate-400">
                             No gateways yet. Nothing can be queued until one exists.
                         </td>
                     </tr>

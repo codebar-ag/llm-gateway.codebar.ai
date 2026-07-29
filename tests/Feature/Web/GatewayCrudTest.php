@@ -30,8 +30,18 @@ it('lists the gateways with the caller base url shortened but still copyable', f
         ->assertOk()
         ->assertSee($gateway->name)
         ->assertSee('/'.substr($gateway->id, 0, 8).'…/v1')
-        ->assertSee('data-copy="'.$gateway->callerBaseUrl().'"', false)
-        ->assertSee('default');
+        ->assertSee('data-copy="'.$gateway->callerBaseUrl().'"', false);
+});
+
+it('answers default and active in their own columns', function () {
+    $default = Gateway::default();
+    $other = Gateway::factory()->ollama()->create(['name' => 'Sidelined', 'is_active' => false]);
+
+    $response = $this->get(route('gateways'))->assertOk();
+
+    // Between a name and its protocol badge sit only the default and active cells.
+    $response->assertSeeInOrder([$default->name, 'yes', 'yes', $default->protocol->label()])
+        ->assertSeeInOrder([$other->name, 'no', 'no', $other->protocol->label()]);
 });
 
 it('creates a gateway', function () {

@@ -34,8 +34,13 @@ ingress:
 
   # The API. Callers bring their own LiteLLM key; upstream decides whether it
   # is any good. This is the only surface that has to be open to the world.
+  #
+  # Both shapes of the API are published: `/v1/…`, which the `gateway`
+  # middleware resolves to the default gateway, and `/<uuid>/v1/…`, which is
+  # the base URL the dashboard hands out for a named gateway. Publishing only
+  # the first would 404 every caller configured against a specific gateway.
   - hostname: llm.async.example.com
-    path: ^/(v1/|up$)
+    path: ^/(up$|([0-9a-fA-F-]{36}/)?v1/)
     service: https://127.0.0.1:443
     originRequest:
       httpHostHeader: llm-gateway.codebar.test
@@ -47,13 +52,16 @@ ingress:
   # DASHBOARD_TOKEN in the app, so a leaked hostname is not enough to read
   # anyone's prompts.
   #
+  # `gateways` is part of this: it decides where every request in the app is
+  # sent, so it is behind the same token and the same deliberate publish.
+  #
   # Two ways to tighten this further:
   #   - delete this block to keep the dashboard on the LAN only; the API above
   #     keeps working and the token guard stays as the local-network guard.
   #   - add a Cloudflare Access policy on the hostname (Zero Trust → Access →
   #     Applications) for SSO in front of the token.
   - hostname: llm.async.example.com
-    path: ^/($|entries/|build/|favicon\.)
+    path: ^/($|entries/|gateways($|/)|build/|favicon\.)
     service: https://127.0.0.1:443
     originRequest:
       httpHostHeader: llm-gateway.codebar.test

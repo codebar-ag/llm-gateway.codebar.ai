@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Filled-in copy of ch.codebar.llmgateway-worker.plist for this machine. The
+    template beside it keeps the placeholders; this one is ready to load:
+
+        cp deploy/ch.codebar.llmgateway-worker.local.plist ~/Library/LaunchAgents/ch.codebar.llmgateway-worker.plist
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ch.codebar.llmgateway-worker.plist
+
+    One worker, matching BACKLOG_WORKERS=1. That setting only feeds the queue
+    estimate and starts nothing, so a second worker without bumping it would
+    halve every ETA the dashboard shows.
+
+    APP_ENV is deliberately absent. A real environment variable wins over .env,
+    so setting it here would run the worker as production while the site runs
+    as local.
+
+    After code changes: php artisan queue:restart
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ch.codebar.llmgateway-worker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/sebastian/Library/Application Support/Herd/bin/php</string>
+        <string>/Users/sebastian/Projects/llm-gateway.codebar/artisan</string>
+        <string>queue:work</string>
+        <string>--queue=default</string>
+        <string>--tries=1</string>
+        <string>--timeout=960</string>
+        <string>--sleep=1</string>
+        <string>--max-time=3600</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/sebastian/Projects/llm-gateway.codebar</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/sebastian/Projects/llm-gateway.codebar/storage/logs/worker.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/sebastian/Projects/llm-gateway.codebar/storage/logs/worker.err.log</string>
+</dict>
+</plist>
