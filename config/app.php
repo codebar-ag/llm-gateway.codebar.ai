@@ -26,15 +26,19 @@ return [
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |
-    | Swiss German throughout, including the locale Faker uses when generating
-    | test data.
+    | Swiss English throughout — every string in the UI is English, so
+    | validation and other framework-generated text stays in the same
+    | language rather than falling back to untranslated keys. Also the
+    | locale Faker uses when generating test data.
     |
     */
 
-    'locale' => env('APP_LOCALE', 'de_CH'),
+    'locale' => env('APP_LOCALE', 'en_CH'),
 
-    'fallback_locale' => env('APP_FALLBACK_LOCALE', 'de_CH'),
+    'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en_CH'),
 
-    'faker_locale' => env('APP_FAKER_LOCALE', 'de_CH'),
+    // Faker has no en_CH provider set; en_US is the closest real match and
+    // what Faker would silently fall back to anyway.
+    'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
 
 ];

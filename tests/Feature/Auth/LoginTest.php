@@ -113,7 +113,13 @@ it('spends the throttle budget on failures only', function () {
 });
 
 it('requires both fields', function () {
-    $this->post(route('login.store'), [])->assertSessionHasErrors(['email', 'password']);
+    $response = $this->post(route('login.store'), [])->assertSessionHasErrors(['email', 'password']);
+
+    // Guards against the locale/lang files going missing again, which leaves
+    // Laravel unable to resolve the message and fall back to the raw key.
+    $errors = $response->getSession()->get('errors');
+    expect($errors->first('email'))->toBe('The email field is required.')
+        ->and($errors->first('password'))->toBe('The password field is required.');
 });
 
 it('signs the operator out again', function () {
