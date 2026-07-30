@@ -349,18 +349,31 @@ the dashboard.
 
 ### Accounts
 
-An account is always required. There is no registration route and **no password
-reset**: accounts are created on the server, which is what keeps the dashboard
+An account is always required. There is no registration route and **no web
+password reset** — both are server commands, which is what keeps the dashboard
 free of any unauthenticated route that could mint or recover access.
 
 ```bash
-php artisan user:register
+php artisan user:register                     # prompts for name and email
+php artisan user:register --name=Ops --email=ops@example.com
 ```
 
-It prompts for a name, an address and a password that is never echoed. Pass
-`--name`, `--email` and `--password` to run it from a deploy script instead —
-that form does land in your shell history, which is why it is not the default.
-A forgotten password is replaced by registering again, or from the database.
+**The password is generated, never chosen** — 16 characters from
+`random_bytes()` — and printed once. Nothing stores it in readable form, so
+copy it there and then. Passing a password in is deliberately not possible: it
+would put a chooseable, shell-history-visible secret on the account that reads
+every prompt this gateway has handled.
+
+Forgotten it? Issue a new one:
+
+```bash
+php artisan user:reset-password --email=ops@example.com
+```
+
+That also **signs out every browser** currently logged in as that operator. The
+dashboard routes carry `auth.session`, which ties each session to the password
+hash it was opened with, so a rotated password locks the old holder out instead
+of leaving them signed in indefinitely.
 
 Failed logins are throttled at five per minute per address **and** IP. Only
 failures count, so mistyping once and then getting it right is not punished.
@@ -392,18 +405,21 @@ now that a session is required either way. The `/v1` API is unaffected by both.
 
 Requires PHP ≥ 8.5, Composer, Node ≥ 24, PostgreSQL and a reachable LLM backend.
 
-The dashboard is built on `@codebar-ag/storybook`, which is published to **GitHub
-Packages rather than npmjs.com**. `.npmrc` points the `@codebar-ag` scope at that
-registry and reads the credential from `GITHUB_TOKEN`, so the variable must be
-exported before any `npm` command — otherwise the package cannot be resolved and
-the install fails:
+The dashboard is built on `@codebar-ag/storybook`. **No credentials are needed
+for anything here** — it is pinned as a git dependency on a public repository:
 
-```bash
-export GITHUB_TOKEN=ghp_…          # a PAT with the `read:packages` scope
+```json
+"@codebar-ag/storybook": "github:codebar-ag/storybook.codebar.ch#v1.7.0"
 ```
 
-In CI the same variable comes from the `PACKAGES_TOKEN` secret. The token is
-never written to `.npmrc`; only the registry mapping is committed.
+A tag rather than a branch, so installs are reproducible, and the package's own
+`prepare` script builds it after checkout. Upgrading means bumping that tag.
+
+It is *published* to GitHub Packages too, but installing from there needs a token
+for every read — public packages included, unlike npmjs.com — so the git route is
+what this project uses instead. If you ever switch back, you will need an
+`.npmrc` mapping the `@codebar-ag` scope and a `GITHUB_TOKEN` with
+`read:packages`, locally and in CI.
 
 ```bash
 composer install
@@ -411,7 +427,7 @@ cp .env.example .env         # fill in DB_*, GATEWAY_* and DASHBOARD_TOKEN
 php artisan key:generate
 createdb llm_gateway
 php artisan migrate          # seeds GATEWAY_SEED_URL as the default gateway
-npm install && npm run build
+npm run build                # installs the private package first if needed
 ```
 
 `GATEWAY_SEED_URL` only seeds that first row. From then on, upstreams are
@@ -591,7 +607,7 @@ directory gets a `.test` site automatically:
 cd ~/Projects/your-app
 
 composer install
-npm install && npm run build
+npm run build                # installs the private package first if needed
 
 cp .env.example .env          # skip if .env already exists
 php artisan key:generate
@@ -906,6 +922,19 @@ composer lint     # Pint
 composer analyse  # PHPStan level 10
 composer verify    # all three
 ```
+
+The frontend has one check of its own:
+
+```bash
+npm run lint:props   # every design-system prop against its own type definition
+```
+
+Vue renders an unknown prop as a plain HTML attribute on the component's root
+element, so a typo binds nothing and still builds, still passes the PHP suite,
+and still renders — just without the value. Two such bugs shipped during the
+Inertia migration before this existed. It reads the props from the installed
+package's `index.d.ts`, so it tracks upgrades rather than a copy that drifts,
+and CI runs it before the build.
 
 ## Contributing
 

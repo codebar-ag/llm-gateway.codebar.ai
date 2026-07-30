@@ -32,6 +32,10 @@ use Illuminate\Support\Facades\Route;
  | render whole prompts and answers, which no caller key entitles anyone to
  | see, and the gateway table decides where every request in the app is sent.
  |
+ | `auth.session` ties each session to the password hash it was opened with, so
+ | `user:reset-password` signs out every browser already holding one. Without it
+ | a rotated password locks nobody out — which is the whole point of rotating it.
+ |
  | The login routes sit inside `dashboard` but outside `auth`, or there would
  | be nowhere to log in.
  */
@@ -45,7 +49,7 @@ Route::middleware('dashboard')->group(function () {
     Route::post('/logout', DestroySessionController::class)->middleware('auth')->name('logout');
 });
 
-Route::middleware(['dashboard', 'auth'])->group(function () {
+Route::middleware(['dashboard', 'auth', 'auth.session'])->group(function () {
     Route::get('/', ShowBacklogController::class)->name('backlog');
     Route::get('/entries/{id}', ShowBacklogEntryController::class)->name('backlog.entry');
     Route::get('/entries/{id}/download/{part}', DownloadEntryPartController::class)

@@ -4,12 +4,28 @@
  | dist is not optional either — without it Tailwind never scans the compiled
  | atoms, and none of their classes reach this stylesheet.
  |
- | The type scale, colours and the all-mono font come from the tokens, so this
- | file deliberately defines no theme of its own.
+ | The colours, shadows, type scale and `--font-mono` all come from the tokens,
+ | so this file deliberately defines no theme of its own.
+ |
+ | JetBrains Mono is loaded here rather than there on purpose: the tokens *name*
+ | it in `--font-mono` but ship no @font-face for it, so without this every
+ | monospace element — entry ids, JSON, key hashes — silently fell back to the
+ | system monospace. Fetching a webfont is the consuming app's decision, which
+ | is why the package leaves it to us.
+ |
+ | Deliberately NOT applied app-wide: the tokens' other family, `--font-dw`
+ | (Open Sans), is documented there as belonging only to the DocuWare App
+ | Registration mirror. Body text inherits the system sans stack, which is what
+ | the package intends by defining no `--font-sans` at all.
  */
 
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
 @import "@codebar-ag/storybook/tokens.css";
 @import "tailwindcss";
+
+/* The atoms' own scoped styles — the Drawer and Modal enter/leave transitions
+   live here and nowhere else, so without this they snap instead of animating. */
+@import "@codebar-ag/storybook/style.css";
 
 @source "../views";
 @source "../js";

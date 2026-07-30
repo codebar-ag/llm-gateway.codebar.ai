@@ -28,10 +28,57 @@ const FALLTHROUGH = { Input: ['placeholder', 'autocomplete', 'autofocus', 'input
 
 const dts = readFileSync(DTS, 'utf8')
 
-const componentProps = new Map(
-    [...dts.matchAll(/declare const (__VLS_component(?:_\d+)?): DefineComponent<(__VLS_Props(?:_\d+)?)\b/g)]
-        .map((m) => [m[1], m[2]]),
-)
+/*
+ | An exported component reaches its props through a chain of internal aliases,
+ | and the shape of that chain depends on how the types were bundled:
+ |
+ |   vite-plugin-dts 4:  X -> __VLS_WithTemplateSlots_N<typeof __VLS_component_N>
+ |                            -> DefineComponent<__VLS_Props_M>
+ |   vite-plugin-dts 5:  X -> __VLS_export_N -> __VLS_WithSlots_M<typeof __VLS_base_M>
+ |                            -> DefineComponent<__VLS_Props_K>
+ |
+ | So rather than matching either spelling, follow `typeof` references until a
+ | DefineComponent turns up. Hard-coding one shape is what made this silently
+ | index zero components — and pass every file — after an upgrade.
+ */
+/*
+ | Resolved per symbol over a bounded window rather than from a map of whole
+ | declarations: a `DefineComponent<…>` spans dozens of lines and its type
+ | arguments contain `;`, so there is no cheap terminator to split declarations
+ | on. Looking each symbol up where it is declared sidesteps that entirely.
+ */
+/**
+ * One declaration, from `index` up to where the next top-level one begins.
+ *
+ * A fixed-size window is wrong here: exports are one-liners packed together, so
+ * a few hundred characters spills into the next component and props get read
+ * off a neighbour. Every declaration in this file starts at column 0, which
+ * makes the next one the only boundary that is actually correct.
+ */
+function statementAt(index) {
+    const from = dts.slice(index)
+    const boundary = from.match(/\n(?:export )?declare /)
+
+    return boundary ? from.slice(0, boundary.index) : from
+}
+
+function propsTypeIn(text, seen) {
+    const direct = text.match(/DefineComponent<\s*(__VLS_Props\w*)\b/)
+    if (direct) return direct[1]
+
+    for (const [, symbol] of text.matchAll(/typeof (\w+)/g)) {
+        if (seen.has(symbol)) continue
+        seen.add(symbol)
+
+        const at = dts.indexOf(`declare const ${symbol}:`)
+        if (at === -1) continue
+
+        const found = propsTypeIn(statementAt(at), seen)
+        if (found) return found
+    }
+
+    return null
+}
 
 const propsOf = (type) => {
     const m = dts.match(new RegExp(`declare type ${type} = \\{([\\s\\S]*?)\\n\\};`))
@@ -41,12 +88,9 @@ const propsOf = (type) => {
 }
 
 const components = new Map()
-for (const m of dts.matchAll(/export declare const (\w+): __VLS_WithTemplateSlots(?:_\d+)?<typeof (__VLS_component(?:_\d+)?)/g)) {
-    const type = componentProps.get(m[2])
+for (const m of dts.matchAll(/export declare const (\w+):/g)) {
+    const type = propsTypeIn(statementAt(m.index), new Set())
     if (type) components.set(m[1], propsOf(type))
-}
-for (const m of dts.matchAll(/export declare const (\w+): DefineComponent<(__VLS_Props(?:_\d+)?)\b/g)) {
-    components.set(m[1], propsOf(m[2]))
 }
 
 const camel = (n) => n.replace(/-([a-z])/g, (_, c) => c.toUpperCase())
@@ -59,6 +103,24 @@ const attributesIn = (tag) =>
         .map((m) => m[1])
         .filter((n) => !n.startsWith('v-') && !n.startsWith('@') && !n.startsWith('#'))
         .map(camel)
+
+/*
+ | A checker that indexes nothing reports every file as clean, which is worse
+ | than having no checker at all — it is a green light that means nothing. This
+ | exact thing happened once: a `vite-plugin-dts` upgrade changed how the
+ | package bundles its declarations, and the parse above quietly matched zero
+ | components while still exiting 0.
+ */
+const MIN_COMPONENTS = 40
+
+if (components.size < MIN_COMPONENTS) {
+    console.error(
+        `check-props: only indexed ${components.size} components from ${DTS}, expected at least ${MIN_COMPONENTS}.\n`
+        + 'The package almost certainly changed how it emits declarations. Fix the\n'
+        + 'parser rather than lowering this number — until then every prop is unchecked.',
+    )
+    process.exit(1)
+}
 
 const vueFiles = readdirSync(PAGES, { recursive: true, encoding: 'utf8' })
     .filter((f) => f.endsWith('.vue'))
