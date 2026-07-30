@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Http\Middleware\VerifyDashboardToken;
 use App\Models\User;
+use Database\Factories\UserFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
+use Pest\Browser\Playwright\Page;
 use Tests\TestCase;
 
 /*
@@ -18,7 +20,7 @@ use Tests\TestCase;
  | the in-memory sqlite connection keeps them fast regardless.
  */
 
-uses(TestCase::class, RefreshDatabase::class)->in('Feature', 'Unit');
+uses(TestCase::class, RefreshDatabase::class)->in('Feature', 'Unit', 'Browser');
 
 /*
  | No test may reach the network. `QUEUE_CONNECTION=sync` runs ProcessBacklogEntry
@@ -27,7 +29,7 @@ uses(TestCase::class, RefreshDatabase::class)->in('Feature', 'Unit');
  | points at. This turns that into a failed test instead of real traffic.
  */
 
-uses()->beforeEach(fn () => Http::preventStrayRequests())->in('Feature', 'Unit');
+uses()->beforeEach(fn () => Http::preventStrayRequests())->in('Feature', 'Unit', 'Browser');
 
 /*
  | RefreshDatabase rolls the database back between tests, but the array cache
@@ -37,7 +39,7 @@ uses()->beforeEach(fn () => Http::preventStrayRequests())->in('Feature', 'Unit')
  | of the factory — passing or failing depending on test order.
  */
 
-uses()->beforeEach(fn () => Cache::flush())->in('Feature', 'Unit');
+uses()->beforeEach(fn () => Cache::flush())->in('Feature', 'Unit', 'Browser');
 
 /*
  | The dashboard has two guards: the shared DASHBOARD_TOKEN and the operator's
@@ -60,6 +62,27 @@ uses()->beforeEach(function () {
 function dashboardToken(): string
 {
     return 'test-dashboard-token';
+}
+
+/**
+ * Signs a real browser into the dashboard through the actual login form.
+ *
+ * `actingAs()` sets the guard on the test's own kernel, not on the cookie jar
+ * a Playwright-driven browser tab carries — a browser test needs a real
+ * session cookie, which only a real form submission produces.
+ *
+ * @return array{0: Page, 1: User}
+ */
+function signIn(?User $user = null): array
+{
+    $user ??= User::factory()->create();
+
+    $page = visit('/login')
+        ->fill('email', $user->email)
+        ->fill('password', UserFactory::password())
+        ->click('button[type="submit"]');
+
+    return [$page, $user];
 }
 
 /** @return array<string, string> */
