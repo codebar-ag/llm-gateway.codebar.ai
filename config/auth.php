@@ -10,12 +10,14 @@ use App\Models\User;
 |
 | One session guard over one Eloquent provider, which is the whole of it.
 |
-| There is deliberately no `passwords` block: this app has no password reset,
-| no reset-token table and no mail configuration to send one with. Accounts
-| are created by `php artisan user:register` on the server, and a forgotten
-| password is replaced the same way. Adding a reset flow would add an
-| unauthenticated, mail-bearing route to an app whose dashboard shows every
-| prompt and answer it has ever handled.
+| There is deliberately no `passwords` block: resetting is a server command,
+| `php artisan user:reset-password`, not an emailed link — so there is no
+| reset-token table and no mail configuration to send one with. Accounts are
+| created the same way, with `php artisan user:register`.
+|
+| A web reset flow would add an unauthenticated route that can take over the
+| account able to read every prompt and answer this app has handled. Requiring
+| a shell on the server instead means no such route exists.
 |
 */
 

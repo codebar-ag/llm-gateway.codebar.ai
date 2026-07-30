@@ -14,6 +14,9 @@ docker-compose.override.yml
 npm-debug.log
 /.php-cs-fixer.cache
 .DS_STORE
+# Not committed: a local one would carry a registry token. The design system is
+# a public git dependency, so nothing here needs a registry mapping.
+.npmrc
 
 database/seeders/LocalSeeder.php
 database/seeders/ProductionSeeder.php

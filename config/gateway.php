@@ -35,11 +35,12 @@ return [
     | The dashboard shows whole prompts and answers, so it is guarded twice.
     |
     | An operator account is always required — created with
-    | `php artisan user:register`, since there is no registration route and no
-    | password reset. This token is a second, shared secret in front of that
-    | login, and it is optional: leave it empty and the login alone guards the
-    | dashboard; set it and a visitor must present it before they even reach
-    | the login form.
+    | `php artisan user:register` and recovered with
+    | `php artisan user:reset-password`, both server-side, since there is no
+    | registration route and no web reset flow. This token is a second, shared
+    | secret in front of that login, and it is optional: leave it empty and the
+    | login alone guards the dashboard; set it and a visitor must present it
+    | before they even reach the login form.
     |
     | Neither is a caller key. A caller key buys a view of that caller's own
     | entries through /v1; these two together grant a view of everyone's.

@@ -48,12 +48,17 @@ ingress:
       noTLSVerify: true
       connectTimeout: 30s
 
-  # The dashboard, plus the built assets and favicon it needs. Guarded by
-  # DASHBOARD_TOKEN in the app, so a leaked hostname is not enough to read
-  # anyone's prompts.
+  # The dashboard, plus the built assets and favicon it needs. Guarded in the
+  # app by an operator login, and by DASHBOARD_TOKEN in front of it when one is
+  # configured — so a leaked hostname is not enough to read anyone's prompts.
+  #
+  # `login` and `logout` have to be here. They are the way in, and leaving them
+  # out publishes a dashboard nobody can sign in to: the catch-all below
+  # answers 404 and the app is never reached at all.
   #
   # `gateways` is part of this: it decides where every request in the app is
-  # sent, so it is behind the same token and the same deliberate publish.
+  # sent, so it is behind the same guards and the same deliberate publish.
+  # `callers` names key hashes and reads the backlog's attribution.
   #
   # Two ways to tighten this further:
   #   - delete this block to keep the dashboard on the LAN only; the API above
@@ -61,7 +66,7 @@ ingress:
   #   - add a Cloudflare Access policy on the hostname (Zero Trust → Access →
   #     Applications) for SSO in front of the token.
   - hostname: llm.async.example.com
-    path: ^/($|entries/|gateways($|/)|build/|favicon\.)
+    path: ^/($|login$|logout$|callers($|/)|entries/|gateways($|/)|build/|favicon\.)
     service: https://127.0.0.1:443
     originRequest:
       httpHostHeader: llm-gateway.codebar.test

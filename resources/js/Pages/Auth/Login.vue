@@ -69,10 +69,5 @@ function submit() {
                 Sign in
             </Button>
         </form>
-
-        <p class="mt-6 text-xs text-dim">
-            There is no password reset. Accounts are created on the server with
-            <code>php artisan user:register</code>.
-        </p>
     </AuthLayout>
 </template>
