@@ -21,6 +21,14 @@ function queuedFor(?string $hash, int $count = 1, ?CarbonImmutable $seenAt = nul
     ]);
 }
 
+/*
+ | Pest's browser plugin only treats a string as a raw CSS/Playwright locator
+ | when it contains a character from a fixed "special char" set (#.[]>+~:*|^,()).
+ | A bare descendant combinator like "tbody tr" has none of those, so it would
+ | silently fall through to an id/name/text lookup instead — finding nothing.
+ | "tbody > tr" contains ">" and is unambiguously treated as CSS.
+ */
+
 it('renders the callers page with the explanatory copy and table headers', function () {
     [$page] = signIn();
 
@@ -53,7 +61,7 @@ it('lists a named and an unnamed caller with their hash, name, and unnamed place
     [$page] = signIn();
 
     $page->navigate('/callers')
-        ->assertCount('tbody tr', 2)
+        ->assertCount('tbody > tr', 2)
         ->assertSee('Nightly batch')
         ->assertSee('unnamed')
         ->assertSee(substr($namedHash, 0, 12).'…')
@@ -68,8 +76,8 @@ it('shows the anonymous bucket as a single shared row with a no key badge instea
     [$page] = signIn();
 
     $page->navigate('/callers')
-        ->assertCount('tbody tr', 1)
-        ->assertSeeIn('tbody tr', 'no key');
+        ->assertCount('tbody > tr', 1)
+        ->assertSeeIn('tbody > tr', 'no key');
 });
 
 it('names the shared anonymous row through the sentinel, and it stays a single row', function () {
@@ -84,7 +92,7 @@ it('names the shared anonymous row through the sentinel, and it stays a single r
         ->fill('name', 'Unkeyed batch')
         ->click('button[type="submit"]')
         ->assertSee('Unkeyed batch')
-        ->assertCount('tbody tr', 1);
+        ->assertCount('tbody > tr', 1);
 
     expect(ApiKeyLabel::query()->sole())
         ->api_key_hash->toBe(ApiKeyLabel::ANONYMOUS)
@@ -165,12 +173,12 @@ it('only keeps one row in edit mode at a time', function () {
     [$page] = signIn();
 
     $page->navigate('/callers')
-        ->assertCount('tbody tr', 2)
-        ->click('tbody tr:nth-child(2) button:text-is("Rename")')
+        ->assertCount('tbody > tr', 2)
+        ->click('tbody > tr:nth-child(2) button:text-is("Rename")')
         ->assertCount('input[name="name"]', 1)
         ->assertValue('input[name="name"]', 'Caller A')
         // Opening row 1's edit form must close row 2's — only one at a time.
-        ->click('tbody tr:nth-child(1) button:text-is("Rename")')
+        ->click('tbody > tr:nth-child(1) button:text-is("Rename")')
         ->assertCount('input[name="name"]', 1)
         ->assertValue('input[name="name"]', 'Caller B');
 });
@@ -187,7 +195,7 @@ it('only shows the forget button on named rows, never on unnamed or anonymous on
     [$page] = signIn();
 
     $page->navigate('/callers')
-        ->assertCount('tbody tr', 3)
+        ->assertCount('tbody > tr', 3)
         ->assertCount('button:text-is("Forget")', 1);
 });
 
@@ -257,7 +265,7 @@ it('never paginates the callers table no matter how many rows exist', function (
     [$page] = signIn();
 
     $page->navigate('/callers')
-        ->assertCount('tbody tr', 15)
+        ->assertCount('tbody > tr', 15)
         ->assertDontSee('Previous')
         ->assertDontSee('Next');
 });

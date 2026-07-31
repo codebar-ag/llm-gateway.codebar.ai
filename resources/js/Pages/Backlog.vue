@@ -165,14 +165,20 @@ onBeforeUnmount(() => clearInterval(timer));
                     </Field>
                 </div>
 
-                <div class="ml-auto flex items-center gap-2">
-                    <Button type="submit">Search</Button>
+                <div class="flex w-full flex-wrap items-center gap-3 sm:ml-auto sm:w-auto">
+                    <Button
+                        type="submit"
+                        class="w-full sm:w-auto"
+                    >
+                        Search
+                    </Button>
 
                     <Link
                         v-if="!filters.areEmpty"
                         :as="InertiaLink"
                         :href="urls.backlog"
                         tone="muted"
+                        class="w-full py-2 text-center sm:w-auto sm:py-0 sm:text-left"
                     >
                         Reset
                     </Link>
