@@ -33,11 +33,16 @@ function logout() {
     <AppShell>
         <template #navbar>
             <Navbar :menu-button="false">
-                <nav class="flex items-center gap-4">
+                <!-- overflow-x-auto + shrink-0: on a narrow viewport this row has
+                     less width than three links need. Without it the last link
+                     (Gateways) is silently squeezed out of view with no way to
+                     reach it, instead of staying reachable via a scroll. -->
+                <nav class="flex items-center gap-4 overflow-x-auto">
                     <Link
                         :as="InertiaLink"
                         :href="nav.backlog"
                         :tone="isActive(nav.backlog) ? 'default' : 'muted'"
+                        class="shrink-0"
                     >
                         Backlog
                     </Link>
@@ -45,6 +50,7 @@ function logout() {
                         :as="InertiaLink"
                         :href="nav.callers"
                         :tone="isActive(nav.callers) ? 'default' : 'muted'"
+                        class="shrink-0"
                     >
                         Callers
                     </Link>
@@ -52,19 +58,28 @@ function logout() {
                         :as="InertiaLink"
                         :href="nav.gateways"
                         :tone="isActive(nav.gateways) ? 'default' : 'muted'"
+                        class="shrink-0"
                     >
                         Gateways
                     </Link>
                 </nav>
 
                 <template #actions>
-                    <Badge
+                    <!-- Wrapped rather than hidden via a class on Badge itself:
+                         Badge's own root already sets `inline-flex`, and fighting
+                         that with a `display` utility passed in as a prop is a
+                         CSS-cascade-order gamble. A wrapper sidesteps it. -->
+                    <span
                         v-if="tunnel"
-                        :variant="tunnel.tone"
-                        size="sm"
+                        class="hidden sm:inline-flex"
                     >
-                        {{ tunnel.label }}
-                    </Badge>
+                        <Badge
+                            :variant="tunnel.tone"
+                            size="sm"
+                        >
+                            {{ tunnel.label }}
+                        </Badge>
+                    </span>
 
                     <span
                         v-if="user"
