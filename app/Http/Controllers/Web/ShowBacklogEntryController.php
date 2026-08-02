@@ -37,7 +37,9 @@ class ShowBacklogEntryController
         // Explicit, because `gateway_id` is nullOnDelete and the relation really
         // can be null — whatever the static analyser infers from the belongsTo.
         $gateway = $entry->gateway;
-        $answer = data_get($entry->output, '0.content.0.text');
+        // A chat answer is the assistant's text; an embedding or a moderation
+        // is summarised, with the body itself one click away under Response.
+        $answer = $entry->answerText();
 
         return [
             'id' => $entry->id,
@@ -102,14 +104,14 @@ class ShowBacklogEntryController
     /**
      * Warn that the answer shown is not the answer the caller received.
      *
-     * An embedding entry keeps the shape of the vectors instead of the vectors
-     * themselves — see `Backlog::record()`. Without saying so, the pane reads
-     * as an upstream that answered with one line of prose.
+     * An embedding entry's answer pane shows the shape of the vectors rather
+     * than thousands of floats. Without saying so, the pane reads as an
+     * upstream that answered with one line of prose.
      */
     private static function answerNote(BacklogEntry $entry): ?string
     {
         return $entry->kind === BacklogKind::Embeddings
-            ? 'Summarised: the vectors went to the caller and are not stored — one batch of them is megabytes of floats.'
+            ? 'Summarised. The vectors themselves are stored whole for the caller to collect — read them under Response.'
             : null;
     }
 

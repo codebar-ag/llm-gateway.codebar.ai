@@ -11,7 +11,9 @@ use App\Http\Controllers\Api\DeleteResponseController;
 use App\Http\Controllers\Api\ListModelsController;
 use App\Http\Controllers\Api\ListResponsesController;
 use App\Http\Controllers\Api\QueueChatCompletionController;
+use App\Http\Controllers\Api\ShowEmbeddingController;
 use App\Http\Controllers\Api\ShowModelController;
+use App\Http\Controllers\Api\ShowModerationController;
 use App\Http\Controllers\Api\ShowResponseController;
 use Illuminate\Support\Facades\Route;
 
@@ -31,9 +33,13 @@ $v1 = function (): void {
         Route::post('/v1/chat/completions', QueueChatCompletionController::class)->name('chat');
         Route::post('/v1/responses', CreateResponseController::class)->name('responses.create');
 
-        // Synchronous like everything else in this block below, but rate
-        // limited like a queued write: each call still costs the upstream
-        // real compute, unlike the plain reads under ListModelsController.
+        /*
+         | Queued for the same reason a completion is: each one costs the
+         | upstream real compute, and a backend that can serve one at a time
+         | has to be asked one at a time. An indexing run posts thousands of
+         | these; answering them inline is what let them all land on the
+         | backend at once.
+         */
         Route::post('/v1/embeddings', CreateEmbeddingController::class)->name('embeddings');
         Route::post('/v1/moderations', CreateModerationController::class)->name('moderations');
     });
@@ -41,6 +47,12 @@ $v1 = function (): void {
     // Synchronous, unlike everything else under /v1: see ListModelsController.
     Route::get('/v1/models', ListModelsController::class)->name('models.index');
     Route::get('/v1/models/{id}', ShowModelController::class)->where('id', '.*')->name('models.show');
+
+    // Collected where they were posted, so a client only ever knows one base
+    // path. Unthrottled like every other read: polling is how an answer is
+    // meant to be collected.
+    Route::get('/v1/embeddings/{id}', ShowEmbeddingController::class)->name('embeddings.show');
+    Route::get('/v1/moderations/{id}', ShowModerationController::class)->name('moderations.show');
 
     Route::get('/v1/responses', ListResponsesController::class)->name('responses.index');
     Route::get('/v1/responses/{id}', ShowResponseController::class)->name('responses.show');

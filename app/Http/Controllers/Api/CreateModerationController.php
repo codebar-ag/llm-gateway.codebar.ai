@@ -5,27 +5,19 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Enums\BacklogKind;
-use App\Http\Middleware\ResolveGateway;
 use App\Services\Backlog;
-use App\Services\Upstream\Upstreams;
-use App\Support\ForwardedHeaders;
-use App\Support\UpstreamCall;
+use App\Services\QueueEstimate;
+use App\Support\QueuedCall;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-/** Answered synchronously and logged all the same — see `CreateEmbeddingController`. */
+/** Queued and collected the same way an embedding is — see `CreateEmbeddingController`. */
 class CreateModerationController
 {
-    public function __invoke(Request $request, Upstreams $upstreams, Backlog $backlog): JsonResponse
+    public function __invoke(Request $request, Backlog $backlog, QueueEstimate $estimate): JsonResponse
     {
-        $gateway = ResolveGateway::of($request);
-        $driver = $upstreams->for($gateway);
-        $headers = ForwardedHeaders::from($request);
-        $payload = $request->json()->all();
+        $entry = $backlog->add($request, $request->json()->all(), BacklogKind::Moderations);
 
-        return $backlog->record($request, BacklogKind::Moderations, $payload, fn () => UpstreamCall::result(
-            fn () => $driver->moderations($gateway, $payload, $headers),
-            fn (array $body) => $driver->normaliseModerations($body),
-        ));
+        return QueuedCall::accepted($request, $entry, $estimate->for($entry));
     }
 }

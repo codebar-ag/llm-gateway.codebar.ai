@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\BacklogKind;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
 use Inertia\Testing\AssertableInertia;
@@ -198,16 +199,17 @@ it('says nothing about the protocol when the gateway is gone entirely', function
         ->assertInertia(fn (AssertableInertia $page) => $page->where('entry.protocolNote', null));
 });
 
-it('names the endpoint a synchronously answered call was logged for', function () {
-    $entry = BacklogEntry::factory()->embeddings()->create();
+it('names the endpoint an entry was queued through, and summarises its answer', function () {
+    $entry = BacklogEntry::factory()->embedded()->create();
 
     $props = inertiaProps($this->get(route('backlog.entry', $entry->id))->assertOk());
 
     expect(collect($props['entry']['facts'])->firstWhere('label', 'Endpoint')['value'])
         ->toBe('embeddings')
-        // The vectors are not stored, and the pane says so rather than reading
-        // as an upstream that answered with one line of prose.
-        ->and($props['entry']['answerNote'])->toContain('not stored');
+        // Summarised rather than thousands of floats, and the pane says where
+        // the vectors themselves are.
+        ->and($props['entry']['answer'])->toBe('2 embeddings × 4 dimensions')
+        ->and($props['entry']['answerNote'])->toContain('under Response');
 });
 
 it('says nothing about the answer of an entry a worker ran', function () {
@@ -215,4 +217,28 @@ it('says nothing about the answer of an entry a worker ran', function () {
 
     expect(inertiaProps($this->get(route('backlog.entry', $entry->id))->assertOk())['entry']['answerNote'])
         ->toBeNull();
+});
+
+it('shows no answer for an embedding still waiting in the queue', function () {
+    $entry = BacklogEntry::factory()->embeddings()->create();
+
+    $props = inertiaProps($this->get(route('backlog.entry', $entry->id))->assertOk());
+
+    // Not "0 embeddings × 0 dimensions": nothing has answered yet, which is a
+    // different fact from an upstream that answered with nothing.
+    expect($props['entry']['answer'])->toBeNull();
+});
+
+it('shows the verdict of a moderation whole, since it is small enough to read', function () {
+    $entry = BacklogEntry::factory()->completed()->create([
+        'kind' => BacklogKind::Moderations,
+        'output' => ['id' => 'modr-1', 'results' => [['flagged' => true]]],
+    ]);
+
+    $props = inertiaProps($this->get(route('backlog.entry', $entry->id))->assertOk());
+
+    expect($props['entry']['answer'])->toContain('"flagged": true')
+        ->and($props['entry']['answerFormat'])->toBe('json')
+        // Only embeddings are summarised away, so only they need the warning.
+        ->and($props['entry']['answerNote'])->toBeNull();
 });

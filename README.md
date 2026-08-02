@@ -38,20 +38,22 @@ Which upstream a request lands on is a **gateway**: a row you manage in the
 dashboard, addressed by putting its id in front of `/v1`. A request that names
 none goes to the default. See [Gateways](#gateways).
 
-It deliberately does **one** thing. Streaming and long-running *chat*
-traffic keeps going through the queue; this host does not stream. The
-exceptions are `GET /v1/models`, `GET /v1/models/{id}`, `POST /v1/embeddings`
-and `POST /v1/moderations` — none of them fit the `background: true` shape a
-completion does, so all four are answered straight from the upstream instead
-of through the backlog. Models is a cheap, idempotent read; embeddings and
-moderations still cost the upstream real compute, so they share the queue's
-per-caller rate limit even though nothing about them is queued — and they are
-**logged like everything else**. Not waiting for a worker is a routing
-decision, not a reason to leave a call out of the record: each one is written
-as a finished entry the moment it is answered, so the dashboard accounts for
-every request this gateway forwards. Filter for them with the *Endpoint*
-dropdown. They stay out of `GET /v1/responses`, which only knows the entries
-it queued.
+It deliberately does **one** thing, and does it to **everything that costs
+the backend compute**: chat completions, embeddings and moderations all queue,
+all come back as a `202` with an id to poll, and all are run by the same
+workers one at a time. A backend that can serve one request at a time has to
+be asked one at a time — an endpoint that answers inline is an endpoint that
+lets a caller hammer it, which is exactly how an indexing run firing tens of
+thousands of embedding batches takes the backend down.
+
+The only endpoints answered straight from the upstream are the ones that cost
+it nothing to answer: `GET /v1/models` and `GET /v1/models/{id}`, cheap
+idempotent reads that every SDK makes before it can do anything at all.
+
+Because everything queues, everything is written down. The row exists from the
+moment a request is *accepted*, before anything goes upstream, so a backend
+that never answers is visible in the dashboard rather than silent. Filter by
+endpoint, model, gateway or caller.
 
 ## The problem
 
@@ -116,12 +118,14 @@ provide. This is that same tool, published as-is.
 | `POST /v1/responses` | queued — `202` in the Responses API shape, plus `queue` |
 | `GET /v1/responses/{id}` | status, result and `queue` — your own entries only |
 | `GET /v1/responses` | your recent entries; `?status=failed&model=…&limit=50` |
-| `POST /v1/responses/{id}/cancel` | only while `queued`, otherwise `409` |
-| `DELETE /v1/responses/{id}` | remove the entry from the API; the row is kept |
+| `POST /v1/responses/{id}/cancel` | only while `queued`, otherwise `409` — works for **any** queued call |
+| `DELETE /v1/responses/{id}` | remove the entry from the API; the row is kept. Any queued call |
 | `GET /v1/models` | **synchronous** — the resolved gateway's models, OpenAI-list shaped |
 | `GET /v1/models/{id}` | **synchronous** — `404` (`model_not_found`) if the gateway does not list it |
-| `POST /v1/embeddings` | **synchronous**, logged, rate limited like a queued write — real upstream compute, not a plain read |
-| `POST /v1/moderations` | **synchronous**, logged, rate limited like a queued write |
+| `POST /v1/embeddings` | queued — `202` with `id`, `poll_url` and `queue` |
+| `GET /v1/embeddings/{id}` | `202` while it waits, the OpenAI embeddings body once it is answered |
+| `POST /v1/moderations` | queued — `202` with `id`, `poll_url` and `queue` |
+| `GET /v1/moderations/{id}` | `202` while it waits, the OpenAI moderation body once it is answered |
 | `GET /up` | liveness — `200` once the app boots |
 | anything else under `/v1` | `404` with an async-only hint |
 

@@ -156,7 +156,7 @@ class ShowBacklogController
             // Only when it is not the chat completion everything else on this
             // page is: naming the norm on every row would be noise, and an
             // embedding row that looks like a completion is the confusion.
-            'kind' => $entry->kind->isQueued() ? null : $entry->kind->label(),
+            'kind' => $entry->kind->isChat() ? null : $entry->kind->label(),
             'gateway' => $gateway === null ? '—' : $gateway->name,
             'caller' => self::caller($entry->api_key_hash, $labels),
             'status' => [

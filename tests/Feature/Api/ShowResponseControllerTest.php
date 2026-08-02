@@ -96,13 +96,22 @@ it('never tells a client to retry immediately', function () {
         ->assertHeader('Retry-After', '1');
 });
 
-it('does not answer for a synchronously answered call', function () {
+it('does not answer for an entry queued by another endpoint', function () {
+    $entry = BacklogEntry::factory()->embedded()->create();
+
+    // 404 rather than the entry: an embedding is collected as a vector list,
+    // and the Responses API would hand it back shaped as a chat response.
+    $this->getJson("/v1/responses/{$entry->id}", gatewayAuth())->assertNotFound();
+});
+
+it('still lets any queued call be cancelled and deleted by id', function () {
     $entry = BacklogEntry::factory()->embeddings()->create();
 
-    // 404 rather than the entry: the Responses API only knows what it queued.
-    $this->getJson("/v1/responses/{$entry->id}", gatewayAuth())->assertNotFound();
-    $this->postJson("/v1/responses/{$entry->id}/cancel", [], gatewayAuth())->assertNotFound();
-    $this->deleteJson("/v1/responses/{$entry->id}", [], gatewayAuth())->assertNotFound();
+    // Cancel and delete are operations on a backlog entry rather than reads of
+    // one, so they carry no shape to get wrong — and an indexing run that has
+    // queued thousands of embeddings needs one way to stop and clear them.
+    $this->postJson("/v1/responses/{$entry->id}/cancel", [], gatewayAuth())->assertOk();
+    $this->deleteJson("/v1/responses/{$entry->id}", [], gatewayAuth())->assertOk();
 
-    expect($entry->fresh()->trashed())->toBeFalse();
+    expect($entry->fresh()->trashed())->toBeTrue();
 });

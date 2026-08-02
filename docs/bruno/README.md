@@ -47,13 +47,17 @@ environment per key — switching mid-flow turns **Show response** into a `404`.
 
 ## Order
 
-Run **Create response** first, then **Show response** to collect the answer.
+Every request that costs the upstream compute is posted first and collected
+second: **Create response** → **Show response**, **Create embedding** →
+**Collect embedding**, **Create moderation** → **Collect moderation**. Each
+create stores the new id in the environment, so the collect beside it needs
+no copy-paste.
 
 `Queue chat completion`, `Create response`, `Queue on a specific gateway`,
-`Create embedding` and `Create moderation` all go through `throttle:queue`
-(`BACKLOG_RATE_LIMIT`, default 60/min per key) — the last two are answered
-synchronously rather than queued, but still cost the upstream real compute.
-Reading, including `List models` and `Show model`, is never throttled.
+`Create embedding` and `Create moderation` all queue, and all go through
+`throttle:queue` (`BACKLOG_RATE_LIMIT`, default 60/min per key). Reading —
+collecting an answer, `List models`, `Show model` — is never throttled,
+because polling is how an answer is meant to be collected.
 
 ## Through the tunnel
 

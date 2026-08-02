@@ -1,0 +1,27 @@
+meta {
+  name: Collect embedding
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{host}}/v1/embeddings/{{embeddingId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{key}}
+}
+
+docs {
+  Poll for the answer. `202` while the entry is still queued or running —
+  carrying `Retry-After` and the same `queue` block the `202` from posting
+  it did — and the upstream's own OpenAI body once a worker has answered.
+
+  Run its **Create** request first — it stores the new id in
+  `{{embeddingId}}` for this environment.
+
+  Scoped to your own key, and to this endpoint: an id queued elsewhere
+  reads as `404` rather than coming back in a shape it never had.
+}

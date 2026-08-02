@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\BacklogKind;
 use App\Models\BacklogEntry;
 use Database\Factories\BacklogEntryFactory;
 use Illuminate\Support\Facades\Queue;
@@ -120,4 +121,49 @@ it('does not leak existence through the cancel conflict response', function () {
     $this->postJson("/v1/responses/{$running->id}/cancel", [], gatewayAuth())
         ->assertNotFound()
         ->assertJsonPath('error.type', 'not_found');
+});
+
+/*
+ | The same question for the endpoints that queue everything else. An embedding
+ | is as much the caller's to keep private as a prompt is — it carries the text
+ | that was embedded.
+ */
+
+it('hides another key\'s embedding behind a 404', function () {
+    $entry = BacklogEntry::factory()->embedded()->create([
+        'api_key_hash' => hash('sha256', 'sk-somebody-else'),
+    ]);
+
+    $this->getJson("/v1/embeddings/{$entry->id}", gatewayAuth())
+        ->assertNotFound()
+        ->assertJsonPath('error.type', 'not_found');
+});
+
+it('hides another key\'s moderation behind a 404', function () {
+    $entry = BacklogEntry::factory()->create([
+        'kind' => BacklogKind::Moderations,
+        'api_key_hash' => hash('sha256', 'sk-somebody-else'),
+    ]);
+
+    $this->getJson("/v1/moderations/{$entry->id}", gatewayAuth())->assertNotFound();
+});
+
+it('gives a keyless caller the embedding they queued without a key', function () {
+    $keyless = BacklogEntry::factory()->embedded()->create(['api_key_hash' => null]);
+    $keyed = BacklogEntry::factory()->embedded()->create();
+
+    $this->getJson("/v1/embeddings/{$keyless->id}")->assertOk();
+    $this->getJson("/v1/embeddings/{$keyed->id}")->assertNotFound();
+});
+
+it('does not leak an embedding queued by another key through the queued receipt', function () {
+    // A 202 carries the entry id and its place in line; both are the caller's
+    // own business, and a wrong key must not learn either.
+    $entry = BacklogEntry::factory()->embeddings()->create([
+        'api_key_hash' => hash('sha256', 'sk-somebody-else'),
+    ]);
+
+    $this->getJson("/v1/embeddings/{$entry->id}", gatewayAuth())
+        ->assertNotFound()
+        ->assertDontSee('queue');
 });

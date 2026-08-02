@@ -104,18 +104,33 @@ class BacklogEntryFactory extends Factory
         ]);
     }
 
-    /**
-     * A call this app answered itself, as `Backlog::record()` writes it: over
-     * before it was stored, tried once, and never retried.
-     */
+    /** A queued embedding, waiting for a worker like everything else. */
     public function embeddings(): static
     {
-        return $this->completed('2 embeddings × 4 dimensions')->state(fn () => [
+        return $this->state(fn () => [
             'kind' => BacklogKind::Embeddings,
             'model' => 'nomic-embed-text',
             'request' => ['model' => 'nomic-embed-text', 'input' => ['first', 'second']],
+        ]);
+    }
+
+    /**
+     * A collected embedding: the upstream's whole body, stored for the caller
+     * to poll for rather than reduced to text the way a chat answer is.
+     */
+    public function embedded(): static
+    {
+        return $this->embeddings()->completed()->state(fn () => [
+            'output' => [
+                'object' => 'list',
+                'data' => [
+                    ['object' => 'embedding', 'index' => 0, 'embedding' => [0.1, 0.2, 0.3, 0.4]],
+                    ['object' => 'embedding', 'index' => 1, 'embedding' => [0.5, 0.6, 0.7, 0.8]],
+                ],
+                'model' => 'nomic-embed-text',
+                'usage' => ['prompt_tokens' => 4, 'total_tokens' => 4],
+            ],
             'usage' => ['input_tokens' => 4, 'output_tokens' => null, 'total_tokens' => 4],
-            'max_attempts' => 1,
         ]);
     }
 

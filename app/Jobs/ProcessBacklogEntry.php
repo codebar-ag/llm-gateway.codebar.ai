@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Enums\BacklogKind;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
+use App\Services\Upstream\UpstreamDriver;
 use App\Services\Upstream\Upstreams;
 use App\Support\ChatPayload;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -76,8 +79,35 @@ class ProcessBacklogEntry implements ShouldBeEncrypted, ShouldBeUniqueUntilProce
         }
 
         $driver = $upstreams->for($gateway);
+        $headers = $entry->headers ?? [];
 
-        $response = $driver->send($gateway, $entry->request, $entry->headers ?? []);
+        /*
+         | Which call this is, decided by the endpoint that queued it. All three
+         | share the queue, the workers and the retry budget — that is the whole
+         | point of routing them here rather than answering inline — but only a
+         | chat completion has an answer that reduces to text. The other two are
+         | stored whole because the caller polls for the body itself.
+         */
+        match ($entry->kind) {
+            BacklogKind::Chat => $this->complete($entry, $driver, $gateway, $headers),
+            BacklogKind::Embeddings => $entry->markAnswered($driver->normaliseEmbeddings(
+                self::body($driver->embeddings($gateway, $entry->request, $headers)),
+            )),
+            BacklogKind::Moderations => $entry->markAnswered($driver->normaliseModerations(
+                self::body($driver->moderations($gateway, $entry->request, $headers)),
+            )),
+        };
+    }
+
+    /**
+     * The chat path: normalise whatever the upstream speaks into a completion,
+     * and store the assistant's text beside it.
+     *
+     * @param  array<string, string>  $headers
+     */
+    private function complete(BacklogEntry $entry, UpstreamDriver $driver, Gateway $gateway, array $headers): void
+    {
+        $response = $driver->send($gateway, $entry->request, $headers);
         $completion = $response->json();
 
         if (! is_array($completion)) {
@@ -89,6 +119,23 @@ class ProcessBacklogEntry implements ShouldBeEncrypted, ShouldBeUniqueUntilProce
         $completion = $driver->normalise($completion);
 
         $entry->markCompleted(ChatPayload::text($completion), $completion);
+    }
+
+    /**
+     * A JSON body, or an empty one.
+     *
+     * An upstream that answered with something other than JSON has already
+     * thrown by the time this runs — the drivers throw on any error status —
+     * so this covers a 200 carrying a body the client could not decode, which
+     * normalising into an empty answer states more honestly than a crash.
+     *
+     * @return array<array-key, mixed>
+     */
+    private static function body(Response $response): array
+    {
+        $body = $response->json();
+
+        return is_array($body) ? $body : [];
     }
 
     public function failed(Throwable $exception): void

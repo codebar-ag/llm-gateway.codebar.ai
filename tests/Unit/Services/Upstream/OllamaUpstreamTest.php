@@ -249,3 +249,198 @@ it('hands a moderation answer back untouched', function () {
 
     expect((new OllamaUpstream)->normaliseModerations($result))->toBe($result);
 });
+
+/*
+ | Tools. Ollama declares one exactly the way chat completions does, so the
+ | translation is only in the calls: it wants the arguments decoded on the way
+ | up, reports them decoded on the way back, and names the tool a result
+ | belongs to rather than matching the id OpenAI uses.
+ */
+
+it('forwards a tool declaration unchanged', function () {
+    $tool = ['type' => 'function', 'function' => [
+        'name' => 'count_invoices',
+        'description' => 'How many invoices are archived.',
+        'parameters' => ['type' => 'object'],
+    ]];
+
+    sendToOllama(['model' => 'm', 'tools' => [$tool]]);
+
+    Http::assertSent(fn (Request $request) => $request['tools'] === [$tool]);
+});
+
+it('sends no tools key when the caller declared none', function () {
+    sendToOllama(['model' => 'm', 'messages' => [['role' => 'user', 'content' => 'hi']]]);
+
+    Http::assertSent(fn (Request $request) => ! array_key_exists('tools', $request->data()));
+});
+
+it('decodes the arguments of a tool call on the way up', function () {
+    sendToOllama(['model' => 'm', 'messages' => [
+        ['role' => 'assistant', 'content' => '', 'tool_calls' => [[
+            'id' => 'call_1',
+            'type' => 'function',
+            'function' => ['name' => 'count_invoices', 'arguments' => '{"archive":"main"}'],
+        ]]],
+    ]]);
+
+    Http::assertSent(fn (Request $request) => json_decode((string) $request->body(), true)['messages'][0]['tool_calls']
+        === [['function' => ['name' => 'count_invoices', 'arguments' => ['archive' => 'main']]]]);
+});
+
+/*
+ | Ollama identifies a result by the tool's name, and the caller only ever
+ | sends back the id — so the name is read out of the turn that asked.
+ */
+it('names the tool a result belongs to', function () {
+    sendToOllama(['model' => 'm', 'messages' => [
+        ['role' => 'assistant', 'tool_calls' => [[
+            'id' => 'call_1',
+            'function' => ['name' => 'count_invoices', 'arguments' => '{}'],
+        ]]],
+        ['role' => 'tool', 'tool_call_id' => 'call_1', 'content' => '42'],
+    ]]);
+
+    Http::assertSent(fn (Request $request) => $request['messages'][1] === [
+        'role' => 'tool',
+        'content' => '42',
+        'tool_name' => 'count_invoices',
+    ]);
+});
+
+it('leaves out the tool name when nothing in the conversation asked for it', function () {
+    sendToOllama(['model' => 'm', 'messages' => [
+        ['role' => 'tool', 'tool_call_id' => 'call_unknown', 'content' => '42'],
+    ]]);
+
+    Http::assertSent(fn (Request $request) => $request['messages'][0] === ['role' => 'tool', 'content' => '42']);
+});
+
+it('normalises a tool call into the openai shape', function () {
+    $completion = (new OllamaUpstream)->normalise([
+        'model' => 'llama3.2:3b',
+        'done_reason' => 'stop',
+        'message' => [
+            'role' => 'assistant',
+            'content' => '',
+            'tool_calls' => [['function' => [
+                'name' => 'count_invoices',
+                'arguments' => ['archive' => 'main'],
+            ]]],
+        ],
+    ]);
+
+    $call = $completion['choices'][0]['message']['tool_calls'][0];
+
+    expect($call['function'])->toBe(['name' => 'count_invoices', 'arguments' => '{"archive":"main"}'])
+        ->and($call['id'])->toStartWith('call_')
+        // Ollama says `stop` whether or not the turn asked for a tool.
+        ->and($completion['choices'][0]['finish_reason'])->toBe('tool_calls');
+});
+
+it('reports no tool_calls key at all when none came back', function () {
+    $message = (new OllamaUpstream)->normalise([
+        'message' => ['role' => 'assistant', 'content' => 'hi'],
+        'done_reason' => 'stop',
+    ])['choices'][0]['message'];
+
+    expect($message)->not->toHaveKey('tool_calls')
+        ->and($message['content'])->toBe('hi');
+});
+
+/*
+ | Ollama edge cases. It declares a tool the way chat completions does, so a
+ | hosted one it cannot run travels as the caller wrote it and Ollama is what
+ | reports that — the same passthrough every untranslatable request gets.
+ */
+
+it('forwards a tool it cannot run rather than removing it', function () {
+    $tool = ['type' => 'web_search'];
+
+    sendToOllama(['model' => 'm', 'tools' => [$tool]]);
+
+    Http::assertSent(fn (Request $request) => $request['tools'] === [$tool]);
+});
+
+it('restates a tool the caller stated flat', function () {
+    sendToOllama(['model' => 'm', 'tools' => [
+        ['type' => 'function', 'name' => 'count_invoices', 'parameters' => ['type' => 'object']],
+    ]]);
+
+    Http::assertSent(fn (Request $request) => $request['tools'] === [[
+        'type' => 'function',
+        'function' => ['name' => 'count_invoices', 'parameters' => ['type' => 'object']],
+    ]]);
+});
+
+it('sends an empty arguments object for a call whose arguments were not json', function () {
+    sendToOllama(['model' => 'm', 'messages' => [
+        ['role' => 'assistant', 'tool_calls' => [[
+            'id' => 'call_1',
+            'function' => ['name' => 'now', 'arguments' => '{"archive":'],
+        ]]],
+    ]]);
+
+    Http::assertSent(fn (Request $request) => str_contains((string) $request->body(), '"arguments":{}'));
+});
+
+it('names the tool for each of several results in one turn', function () {
+    sendToOllama(['model' => 'm', 'messages' => [
+        ['role' => 'assistant', 'tool_calls' => [
+            ['id' => 'call_1', 'function' => ['name' => 'count_invoices', 'arguments' => '{}']],
+            ['id' => 'call_2', 'function' => ['name' => 'list_archives', 'arguments' => '{}']],
+        ]],
+        ['role' => 'tool', 'tool_call_id' => 'call_2', 'content' => 'main'],
+        ['role' => 'tool', 'tool_call_id' => 'call_1', 'content' => '42'],
+    ]]);
+
+    Http::assertSent(fn (Request $request) => $request['messages'][1]['tool_name'] === 'list_archives'
+        && $request['messages'][2]['tool_name'] === 'count_invoices');
+});
+
+/*
+ | The system prompt is hoisted to the front, so a conversation that opens
+ | with a tool result must still keep its own name resolution intact.
+ */
+it('keeps the tool name when a system prompt was hoisted in front', function () {
+    sendToOllama(['model' => 'm', 'messages' => [
+        ['role' => 'system', 'content' => 'Be brief.'],
+        ['role' => 'assistant', 'tool_calls' => [
+            ['id' => 'call_1', 'function' => ['name' => 'count_invoices', 'arguments' => '{}']],
+        ]],
+        ['role' => 'tool', 'tool_call_id' => 'call_1', 'content' => '42'],
+    ]]);
+
+    Http::assertSent(fn (Request $request) => $request['messages'][0]['role'] === 'system'
+        && $request['messages'][2]['tool_name'] === 'count_invoices');
+});
+
+it('adds no tool keys to an ordinary message', function () {
+    sendToOllama(['model' => 'm', 'messages' => [['role' => 'user', 'content' => 'hi']]]);
+
+    Http::assertSent(fn (Request $request) => $request['messages'][0] === ['role' => 'user', 'content' => 'hi']);
+});
+
+it('normalises several tool calls in order', function () {
+    $calls = (new OllamaUpstream)->normalise(['message' => ['tool_calls' => [
+        ['function' => ['name' => 'a', 'arguments' => ['x' => 1]]],
+        ['function' => ['name' => 'b', 'arguments' => []]],
+    ]]])['choices'][0]['message']['tool_calls'];
+
+    expect($calls)->toHaveCount(2)
+        ->and($calls[0]['function'])->toBe(['name' => 'a', 'arguments' => '{"x":1}'])
+        ->and($calls[1]['function'])->toBe(['name' => 'b', 'arguments' => '{}'])
+        ->and($calls[0]['id'])->not->toBe($calls[1]['id']);
+});
+
+it('keeps the thinking fallback beside a tool call', function () {
+    $message = (new OllamaUpstream)->normalise(['message' => [
+        'content' => '',
+        'thinking' => 'the archive is main',
+        'tool_calls' => [['function' => ['name' => 'count_invoices']]],
+    ]])['choices'][0]['message'];
+
+    expect($message['reasoning_content'])->toBe('the archive is main')
+        ->and($message)->not->toHaveKey('content')
+        ->and($message['tool_calls'])->toHaveCount(1);
+});

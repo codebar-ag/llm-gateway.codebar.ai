@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\BacklogKind;
 use App\Enums\BacklogStatus;
 use App\Models\BacklogEntry;
 use App\Support\QueuePlace;
@@ -43,7 +44,7 @@ class QueueEstimate
          | merely starts.
          */
         $batches = (int) ceil(($ahead + $this->runningCount() + 1) / $workers);
-        $seconds = $batches * $this->secondsPerEntry($entry->model);
+        $seconds = $batches * $this->secondsPerEntry($entry->model, $entry->kind);
 
         return new QueuePlace(
             position: $ahead + 1,
@@ -97,7 +98,12 @@ class QueueEstimate
     }
 
     /**
-     * How long one answer for this model has been taking.
+     * How long one answer for this model, on this endpoint, has been taking.
+     *
+     * Keyed by kind as well as model because they are different units of work:
+     * a 64-document embedding batch and a single chat completion can name the
+     * same model and take wildly different times, and one cache key for both
+     * would quote each of them the other's wait.
      *
      * Cached briefly because polling is unthrottled by design, and a median
      * over the last few entries does not move between two polls a second
@@ -110,12 +116,12 @@ class QueueEstimate
      * number that is about this entry and changes as the line moves, is read
      * live on every poll.
      */
-    private function secondsPerEntry(?string $model): int
+    private function secondsPerEntry(?string $model, BacklogKind $kind): int
     {
         return Cache::remember(
-            'backlog:estimate:'.($model ?? '*'),
+            'backlog:estimate:'.$kind->value.':'.($model ?? '*'),
             Config::integer('gateway.backlog.estimate.ttl'),
-            function () use ($model): int {
+            function () use ($model, $kind): int {
                 $sample = Config::integer('gateway.backlog.estimate.sample');
 
                 /*
@@ -124,8 +130,8 @@ class QueueEstimate
                  | Reporting zero would read as "any moment now", which is the
                  | one thing an unmeasured queue cannot claim.
                  */
-                return self::median(BacklogEntry::recentDurations($model, $sample))
-                    ?? self::median(BacklogEntry::recentDurations(null, $sample))
+                return self::median(BacklogEntry::recentDurations($model, $sample, $kind))
+                    ?? self::median(BacklogEntry::recentDurations(null, $sample, $kind))
                     ?? Config::integer('gateway.backlog.estimate.default_seconds');
             }
         );

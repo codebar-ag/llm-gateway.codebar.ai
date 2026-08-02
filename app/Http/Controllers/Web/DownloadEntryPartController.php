@@ -56,7 +56,7 @@ class DownloadEntryPartController
         return match ($part) {
             'request' => self::json($entry->request),
             'response' => self::json($entry->output),
-            'answer' => self::text(data_get($entry->output, '0.content.0.text')),
+            'answer' => self::text($entry->answerText()),
             'error' => self::json($entry->error),
             default => null,
         };

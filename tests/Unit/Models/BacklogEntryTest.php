@@ -88,6 +88,62 @@ it('marks itself completed with output and usage', function () {
         ->and($entry->finished_at)->not->toBeNull();
 });
 
+/*
+ | A completion that asked for a tool. The calls are output items of their own
+ | beside the message, which is what a caller polls for and answers on the
+ | next turn — reducing the completion to its text is what used to drop them.
+ */
+
+it('keeps the tool calls a completion asked for', function () {
+    $entry = BacklogEntry::factory()->running()->create();
+
+    $entry->markCompleted('einen Moment', ['choices' => [['message' => [
+        'content' => 'einen Moment',
+        'tool_calls' => [[
+            'id' => 'call_1',
+            'type' => 'function',
+            'function' => ['name' => 'count_invoices', 'arguments' => '{"archive":"main"}'],
+        ]],
+    ]]]]);
+
+    expect($entry->output)->toHaveCount(2)
+        ->and($entry->output[0]['type'])->toBe('message')
+        ->and($entry->output[1])->toMatchArray([
+            'type' => 'function_call',
+            'call_id' => 'call_1',
+            'name' => 'count_invoices',
+            'arguments' => '{"archive":"main"}',
+        ])
+        ->and($entry->answerText())->toBe('einen Moment');
+});
+
+/*
+ | A model that only asked for a tool wrote no text, and an empty message item
+ | beside the call would read as an assistant that answered with nothing.
+ */
+it('states no message item when the turn was only a tool call', function () {
+    $entry = BacklogEntry::factory()->running()->create();
+
+    $entry->markCompleted('', ['choices' => [['message' => ['tool_calls' => [[
+        'id' => 'call_1',
+        'function' => ['name' => 'count_invoices', 'arguments' => '{"archive":"main"}'],
+    ]]]]]]);
+
+    expect($entry->output)->toHaveCount(1)
+        ->and($entry->output[0]['type'])->toBe('function_call')
+        ->and($entry->answerText())->toBe('count_invoices({"archive":"main"})');
+});
+
+it('still states an empty message when the upstream answered with nothing at all', function () {
+    $entry = BacklogEntry::factory()->running()->create();
+
+    $entry->markCompleted('', []);
+
+    expect($entry->output)->toHaveCount(1)
+        ->and($entry->output[0]['type'])->toBe('message')
+        ->and($entry->answerText())->toBe('');
+});
+
 it('tolerates completions without usage', function () {
     $entry = BacklogEntry::factory()->running()->create();
 
@@ -271,4 +327,48 @@ it('reports one moment for a caller with a single entry', function () {
 
     expect($caller['first_seen']->toDateTimeString())->toBe('2026-02-03 10:11:12')
         ->and($caller['last_seen']->toDateTimeString())->toBe('2026-02-03 10:11:12');
+});
+
+it('keeps several tool calls in the order the model asked for them', function () {
+    $entry = BacklogEntry::factory()->running()->create();
+
+    $entry->markCompleted('', ['choices' => [['message' => ['tool_calls' => [
+        ['id' => 'call_1', 'function' => ['name' => 'count_invoices', 'arguments' => '{}']],
+        ['id' => 'call_2', 'function' => ['name' => 'list_archives', 'arguments' => '{}']],
+    ]]]]]);
+
+    expect($entry->output)->toHaveCount(2)
+        ->and($entry->output[0]['call_id'])->toBe('call_1')
+        ->and($entry->output[1]['call_id'])->toBe('call_2')
+        ->and($entry->output[0]['id'])->not->toBe($entry->output[1]['id']);
+});
+
+/*
+ | A call nothing can dispatch is dropped on the way back, so what is left is
+ | an entry that answered with text alone — and it has to still say so.
+ */
+it('falls back to the message when every call was unusable', function () {
+    $entry = BacklogEntry::factory()->running()->create();
+
+    $entry->markCompleted('hier ist die Antwort', ['choices' => [['message' => [
+        'content' => 'hier ist die Antwort',
+        'tool_calls' => [['id' => 'call_1', 'function' => ['arguments' => '{}']]],
+    ]]]]);
+
+    expect($entry->output)->toHaveCount(1)
+        ->and($entry->output[0]['type'])->toBe('message')
+        ->and($entry->answerText())->toBe('hier ist die Antwort');
+});
+
+it('reports no answer text for an entry still in the queue', function () {
+    expect(BacklogEntry::factory()->create()->answerText())->toBeNull();
+});
+
+it('finds the message text even when a call was listed first', function () {
+    $entry = BacklogEntry::factory()->running()->create(['output' => [
+        ['type' => 'function_call', 'name' => 'now', 'arguments' => '{}'],
+        ['type' => 'message', 'content' => [['type' => 'output_text', 'text' => 'nachher']]],
+    ]]);
+
+    expect($entry->answerText())->toBe('nachher');
 });

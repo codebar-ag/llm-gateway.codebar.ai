@@ -6,11 +6,28 @@ use App\Enums\BacklogKind;
 use App\Enums\BacklogStatus;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
-it('answers the default gateway synchronously, and logs the call', function () {
+it('queues the request and hands back an id to poll', function () {
+    Queue::fake();
+
+    $response = $this->postJson('/v1/moderations', ['model' => 'omni-moderation-latest', 'input' => 'hello'], gatewayAuth())
+        ->assertStatus(202);
+
+    $entry = BacklogEntry::sole();
+
+    $response
+        ->assertJsonPath('id', $entry->id)
+        ->assertJsonPath('object', 'moderation.queued')
+        ->assertJsonPath('poll_url', "/v1/moderations/{$entry->id}");
+
+    expect($entry->kind)->toBe(BacklogKind::Moderations)
+        ->and($entry->status)->toBe(BacklogStatus::Queued);
+});
+
+it('is answered by a worker, which stores the verdict for collection', function () {
     Http::fake(['http://upstream.invalid/v1/moderations' => Http::response([
         'id' => 'modr-1',
         'model' => 'omni-moderation-latest',
@@ -18,19 +35,12 @@ it('answers the default gateway synchronously, and logs the call', function () {
     ])]);
 
     $this->postJson('/v1/moderations', ['model' => 'omni-moderation-latest', 'input' => 'hello'], gatewayAuth())
-        ->assertOk()
-        ->assertJsonPath('results.0.flagged', false);
+        ->assertStatus(202);
 
     $entry = BacklogEntry::sole();
 
     expect($entry->status)->toBe(BacklogStatus::Completed)
-        ->and($entry->kind)->toBe(BacklogKind::Moderations)
-        // Small enough to keep whole, unlike an embedding's vectors: the
-        // verdict is the only thing anyone comes back to a moderation for.
-        ->and(data_get($entry->output, '0.content.0.text'))->toContain('"flagged": false')
-        // Nothing upstream reported a token count, which is not the same as
-        // having counted zero.
-        ->and($entry->usage)->toBeNull();
+        ->and($entry->output['results'][0]['flagged'])->toBeFalse();
 
     Http::assertSent(fn (Request $request) => $request->method() === 'POST'
         && $request->url() === 'http://upstream.invalid/v1/moderations'
@@ -38,49 +48,30 @@ it('answers the default gateway synchronously, and logs the call', function () {
         && $request->hasHeader('Authorization', 'Bearer sk-test-caller'));
 });
 
-it('answers under a gateway prefix too', function () {
-    $gateway = Gateway::factory()->create(['base_url' => 'http://litellm.test']);
-    Http::fake(['http://litellm.test/v1/moderations' => Http::response(['results' => []])]);
+it('collects the verdict from the moderations endpoint', function () {
+    Http::fake(['*' => Http::response(['id' => 'modr-1', 'results' => [['flagged' => true]]])]);
 
-    $this->postJson("/{$gateway->id}/v1/moderations", ['input' => 'hi'], gatewayAuth())->assertOk();
+    $id = $this->postJson('/v1/moderations', ['input' => 'hi'], gatewayAuth())->json('id');
 
-    Http::assertSent(fn (Request $request) => $request->url() === 'http://litellm.test/v1/moderations');
+    $this->getJson("/v1/moderations/{$id}", gatewayAuth())
+        ->assertOk()
+        ->assertJsonPath('results.0.flagged', true);
 });
 
-/*
- | Neither Anthropic nor Ollama has ever implemented this endpoint. The
- | request still reaches the upstream and comes back as whatever it answers —
- | this app does not pretend to know better.
- */
-it('passes an upstream error through with its own status for a protocol that has no moderations endpoint', function () {
-    $gateway = Gateway::factory()->ollama()->create();
-    Http::fake(['*' => Http::response('404 page not found', 404)]);
+it('queues under a gateway prefix too', function () {
+    Queue::fake();
+    $gateway = Gateway::factory()->create();
 
     $this->postJson("/{$gateway->id}/v1/moderations", ['input' => 'hi'], gatewayAuth())
-        ->assertStatus(404)
-        ->assertJsonPath('error.type', 'upstream_error')
-        ->assertJsonPath('error.body', '404 page not found');
-
-    // Logged as the failure it was: an upstream that has no such endpoint is
-    // exactly the thing an operator opens the dashboard to find out.
-    expect(BacklogEntry::sole())
-        ->status->toBe(BacklogStatus::Failed)
-        ->and(BacklogEntry::sole()->error['status'])->toBe(404);
+        ->assertStatus(202)
+        ->assertJsonPath('poll_url', "/{$gateway->id}/v1/moderations/".BacklogEntry::sole()->id);
 });
 
-it('answers 502 when the upstream cannot be reached', function () {
-    Http::fake(fn () => throw new ConnectionException('Connection refused'));
-
-    $this->postJson('/v1/moderations', ['input' => 'hi'], gatewayAuth())
-        ->assertStatus(502)
-        ->assertJsonPath('error.type', 'upstream_unreachable');
-});
-
-it('shares the queueing rate limit rather than staying unthrottled like a plain read', function () {
+it('shares the queueing rate limit', function () {
+    Queue::fake();
     config(['gateway.backlog.rate_limit' => 1]);
-    Http::fake(['*' => Http::response(['results' => []])]);
 
-    $this->postJson('/v1/moderations', ['input' => 'hi'], gatewayAuth())->assertOk();
+    $this->postJson('/v1/moderations', ['input' => 'hi'], gatewayAuth())->assertStatus(202);
 
     $this->postJson('/v1/moderations', ['input' => 'hi'], gatewayAuth())
         ->assertStatus(429)

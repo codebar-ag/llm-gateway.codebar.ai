@@ -6,6 +6,7 @@ namespace App\Services\Upstream;
 
 use App\Support\ChatPayload;
 use App\Support\JsonValue;
+use App\Support\ToolCalls;
 use Illuminate\Support\Collection;
 
 /**
@@ -31,6 +32,10 @@ class OllamaUpstream extends Upstream
      */
     public function normalise(array $body): array
     {
+        // Ollama reports a call with the arguments decoded and, before 0.4,
+        // with no id at all; `ToolCalls` restates both into the OpenAI form.
+        $toolCalls = ToolCalls::fromMessage(JsonValue::at($body, 'message'));
+
         return [
             'id' => JsonValue::stringAt($body, 'created_at'),
             'object' => 'chat.completion',
@@ -43,8 +48,13 @@ class OllamaUpstream extends Upstream
                     // Thinking models put the answer here when content is empty,
                     // which is the fallback ChatPayload::text() already knows.
                     'reasoning_content' => JsonValue::stringAt($body, 'message.thinking'),
-                ], fn (string $value) => $value !== ''),
-                'finish_reason' => $this->finishReason(JsonValue::stringAt($body, 'done_reason')),
+                    'tool_calls' => $toolCalls,
+                ], fn (mixed $value) => $value !== '' && $value !== []),
+                // Ollama reports `stop` whether or not the turn asked for a
+                // tool; a caller keys off the finish reason to know it did.
+                'finish_reason' => $toolCalls === []
+                    ? $this->finishReason(JsonValue::stringAt($body, 'done_reason'))
+                    : 'tool_calls',
             ]],
             'usage' => self::usage(
                 JsonValue::intAt($body, 'prompt_eval_count'),
@@ -129,6 +139,9 @@ class OllamaUpstream extends Upstream
             'messages' => $this->messages($payload),
             'stream' => false,
             'options' => $this->options($payload),
+            // Ollama declares a tool exactly the way chat completions does, so
+            // this is a filter for what it cannot run rather than a rename.
+            'tools' => ToolCalls::tools(JsonValue::at($payload, 'tools')),
         ], fn (mixed $value) => $value !== '' && $value !== []);
     }
 
@@ -143,11 +156,17 @@ class OllamaUpstream extends Upstream
     private function messages(array $payload): array
     {
         $system = ChatPayload::systemPrompt($payload);
+        $conversation = ChatPayload::conversation($payload);
+        $names = self::toolNames($conversation);
 
-        return collect(ChatPayload::conversation($payload))
+        return collect($conversation)
             ->map(fn (array $message) => [
                 'role' => JsonValue::stringAt($message, 'role') ?: 'user',
                 'content' => ChatPayload::contentText(JsonValue::at($message, 'content')),
+                ...array_filter([
+                    'tool_name' => $names[JsonValue::stringAt($message, 'tool_call_id')] ?? '',
+                    'tool_calls' => $this->toolCalls($message),
+                ], fn (mixed $value) => $value !== '' && $value !== []),
             ])
             ->when($system !== '', fn (Collection $messages) => $messages->prepend([
                 'role' => 'system',
@@ -155,6 +174,45 @@ class OllamaUpstream extends Upstream
             ]))
             ->values()
             ->all();
+    }
+
+    /**
+     * Which tool each call id was for.
+     *
+     * Ollama identifies a result by the tool's name where OpenAI matches on
+     * the call id, so the name has to be read back out of the assistant turn
+     * that asked for it — the caller only ever sends the id.
+     *
+     * @param  array<int, array<array-key, mixed>>  $conversation
+     * @return array<string, string>
+     */
+    private static function toolNames(array $conversation): array
+    {
+        return collect($conversation)
+            ->flatMap(fn (array $message) => ToolCalls::fromMessage($message))
+            ->mapWithKeys(fn (array $call) => [
+                JsonValue::stringAt($call, 'id') => JsonValue::stringAt($call, 'function.name'),
+            ])
+            ->filter()
+            ->all();
+    }
+
+    /**
+     * Ollama nests a call under `function` like OpenAI but wants the arguments
+     * as an object rather than the JSON string they are stored as, and reads
+     * no id — it is dropped rather than sent somewhere it means nothing.
+     *
+     * @param  array<array-key, mixed>  $message
+     * @return array<int, array<string, mixed>>
+     */
+    private function toolCalls(array $message): array
+    {
+        return array_map(fn (array $call): array => [
+            'function' => [
+                'name' => JsonValue::stringAt($call, 'function.name'),
+                'arguments' => (object) ToolCalls::decodedArguments(JsonValue::at($call, 'function.arguments')),
+            ],
+        ], ToolCalls::fromMessage($message));
     }
 
     /**

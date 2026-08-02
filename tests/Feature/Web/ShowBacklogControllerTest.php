@@ -301,7 +301,7 @@ it('names a caller in the filter with the label the listing rows use', function 
         ->and($props['entries'][0]['caller']['label'])->toBe('billing-service');
 });
 
-it('lists a synchronously answered call beside everything else', function () {
+it('lists an embedding beside everything else', function () {
     $embedding = BacklogEntry::factory()->embeddings()->create();
 
     $props = inertiaProps($this->get('/')->assertOk());
@@ -344,8 +344,8 @@ it('reads an unknown endpoint as no filter rather than as an empty listing', fun
         ->and($props['filters']['areEmpty'])->toBeTrue();
 });
 
-it('counts a synchronously answered call in the status tiles', function () {
-    BacklogEntry::factory()->embeddings()->create();
+it('counts an embedding in the status tiles like everything else', function () {
+    BacklogEntry::factory()->embedded()->create();
 
     $completed = collect(inertiaProps($this->get('/')->assertOk())['statuses'])
         ->firstWhere('value', 'completed');

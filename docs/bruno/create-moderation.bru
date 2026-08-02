@@ -1,7 +1,7 @@
 meta {
   name: Create moderation
   type: http
-  seq: 12
+  seq: 13
 }
 
 post {
@@ -21,10 +21,16 @@ body:json {
   }
 }
 
+vars:post-response {
+  moderationId: res.body.id
+}
+
 docs {
-  Synchronous and rate limited the same way **Create embedding** is. Only
-  OpenAI-compatible upstreams have ever implemented this endpoint — on an
-  Anthropic or Ollama gateway the request is still forwarded, and that
-  upstream's own `404` comes back under `error.type: upstream_error` rather
-  than this app guessing at support it cannot verify.
+  Queued and collected the same way **Create embedding** is. Answers `202`;
+  read the verdict back with **Collect moderation**.
+
+  Only OpenAI-compatible upstreams have ever implemented this endpoint. A
+  gateway on Anthropic or Ollama forwards the request anyway and records
+  that upstream's own `404`, rather than this app guessing at support it
+  cannot verify.
 }

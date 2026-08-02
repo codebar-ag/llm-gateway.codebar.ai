@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\BacklogKind;
 use App\Http\Resources\BacklogEntryResource;
 use App\Models\BacklogEntry;
 use App\Services\QueueEstimate;
@@ -17,7 +18,7 @@ class ShowResponseController
     public function __invoke(Request $request, string $id, QueueEstimate $estimate): JsonResponse
     {
         $entry = BacklogEntry::query()
-            ->queueable()
+            ->ofKind(BacklogKind::Chat)
             ->ownedBy(ForwardedHeaders::keyHash($request))
             ->findOrFail($id);
 

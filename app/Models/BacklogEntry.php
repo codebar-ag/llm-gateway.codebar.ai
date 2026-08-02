@@ -6,6 +6,8 @@ namespace App\Models;
 
 use App\Enums\BacklogKind;
 use App\Enums\BacklogStatus;
+use App\Support\JsonValue;
+use App\Support\ToolCalls;
 use App\Support\UpstreamFailure;
 use Carbon\CarbonImmutable;
 use Database\Factories\BacklogEntryFactory;
@@ -30,7 +32,7 @@ use Throwable;
  * @property Gateway|null $gateway
  * @property array<string, mixed> $request
  * @property array<string, string>|null $headers
- * @property array<int, mixed>|null $output
+ * @property array<array-key, mixed>|null $output
  * @property array<string, int|null>|null $usage
  * @property array<string, mixed>|null $error
  * @property int $attempts
@@ -224,16 +226,17 @@ class BacklogEntry extends Model
      *
      * The measurement behind an estimate. Only completed entries are read:
      * a failure's duration is how long the upstream took to give up, which
-     * says nothing about how long an answer takes. Queueable ones at that —
-     * a synchronously answered embedding is over in milliseconds, and mixing
-     * those in would tell a caller their chat completion is nearly done.
+     * says nothing about how long an answer takes. Of one kind at that: a
+     * 64-document embedding batch and a chat completion are not the same unit
+     * of work even on the same model, and averaging them together quotes both
+     * callers a wait neither will see.
      *
      * @return Collection<int, int>
      */
-    public static function recentDurations(?string $model, int $limit): Collection
+    public static function recentDurations(?string $model, int $limit, ?BacklogKind $kind = null): Collection
     {
         return static::query()
-            ->queueable()
+            ->when($kind, fn (Builder $query, BacklogKind $only) => $query->ofKind($only))
             ->where('status', BacklogStatus::Completed)
             ->whereNotNull('started_at')
             ->whereNotNull('finished_at')
@@ -267,18 +270,19 @@ class BacklogEntry extends Model
     }
 
     /**
-     * The entries the Responses API knows about: the ones it queued.
+     * Narrow to one endpoint's entries.
      *
-     * An embedding or a moderation is logged the same way and shows up in the
-     * dashboard beside everything else, but it was answered while the caller
-     * waited — there is no id to poll, nothing to cancel, and listing one as a
-     * `response` object would describe a call that never was one.
+     * Every kind now queues, so what separates them is the shape they are
+     * collected in: `/v1/responses/{id}` answers with a response object and
+     * `/v1/embeddings/{id}` with a vector list. Each poll route reads only
+     * its own kind, so an id from one endpoint cannot be collected — or
+     * silently mis-shaped — through another.
      *
      * @param  Builder<BacklogEntry>  $query
      */
-    public function scopeQueueable(Builder $query): void
+    public function scopeOfKind(Builder $query, BacklogKind $kind): void
     {
-        $query->whereIn('kind', array_filter(BacklogKind::cases(), fn (BacklogKind $kind) => $kind->isQueued()));
+        $query->where('kind', $kind);
     }
 
     public function canRetry(): bool
@@ -336,8 +340,28 @@ class BacklogEntry extends Model
     {
         return $this->finish([
             'status' => BacklogStatus::Completed,
-            'output' => self::outputFor($text),
+            'output' => self::outputFor($text, ToolCalls::fromCompletion($completion)),
             'usage' => self::usageFrom($completion),
+            'error' => null,
+        ]);
+    }
+
+    /**
+     * Store an answer that is not a chat message.
+     *
+     * The upstream's whole body, kept as it arrived: an embedding caller polls
+     * for their vectors and has nowhere else to get them, so unlike a chat
+     * answer there is nothing here to reduce to text. The dashboard renders
+     * `BacklogKind::summarise()` instead of thousands of floats.
+     *
+     * @param  array<array-key, mixed>  $body
+     */
+    public function markAnswered(array $body): self
+    {
+        return $this->finish([
+            'status' => BacklogStatus::Completed,
+            'output' => $body,
+            'usage' => Arr::has($body, 'usage') ? self::usageFrom($body) : null,
             'error' => null,
         ]);
     }
@@ -428,6 +452,44 @@ class BacklogEntry extends Model
         return (int) round($this->started_at->diffInSeconds($this->finished_at));
     }
 
+    /**
+     * The answer as text, for anything that shows or downloads one.
+     *
+     * A chat entry carries the assistant's own message. The other kinds store
+     * the upstream's whole body for the caller to collect, so what is shown is
+     * a summary of it — but only once there *is* a body: an entry still in the
+     * queue has no answer, and summarising its absence would render a waiting
+     * embedding as "0 embeddings × 0 dimensions", which reads as an upstream
+     * that answered with nothing rather than as one that has not answered.
+     */
+    public function answerText(): ?string
+    {
+        if ($this->kind->isChat()) {
+            return self::messageText($this->output) ?? ToolCalls::summarise($this->output ?? []);
+        }
+
+        return $this->output === null ? null : $this->kind->summarise($this->output);
+    }
+
+    /**
+     * The assistant's own text, wherever in the output list it sits.
+     *
+     * Not simply the first item any more: a turn that asked for a tool puts
+     * `function_call` items in the same list, and one that asked for nothing
+     * else puts them there without a message to lead with.
+     *
+     * @param  array<array-key, mixed>|null  $output
+     */
+    private static function messageText(?array $output): ?string
+    {
+        $message = collect($output ?? [])
+            ->first(fn (mixed $item) => JsonValue::stringAt($item, 'type') === 'message');
+
+        $text = data_get($message, 'content.0.text');
+
+        return is_string($text) ? $text : null;
+    }
+
     /** Error message plus the untouched upstream answer, for display. */
     public function errorDetails(): string
     {
@@ -446,35 +508,48 @@ class BacklogEntry extends Model
     }
 
     /**
-     * The envelope an answer is stored in.
+     * The Responses API output list: the assistant's message, then one
+     * `function_call` item per tool the model asked for.
      *
-     * Public because a synchronously answered call is finished before it is
-     * ever written — `Backlog::record()` builds the same ending in one insert
-     * rather than a worker reaching it through `markCompleted()`.
+     * A turn that only asked for tools writes no text, and an empty message
+     * item sitting beside the calls would read as an assistant that answered
+     * with nothing — so the message is stated only when there is one. With no
+     * calls it is stated regardless, because an upstream that genuinely
+     * answered with an empty string still owes the caller the shape.
      *
+     * @param  array<int, array<string, mixed>>  $toolCalls
      * @return array<int, array<string, mixed>>
      */
-    public static function outputFor(string $text): array
+    private static function outputFor(string $text, array $toolCalls): array
     {
-        return [[
+        $message = [[
             'type' => 'message',
             'role' => 'assistant',
             'status' => 'completed',
             'content' => [['type' => 'output_text', 'text' => $text]],
         ]];
+
+        if ($toolCalls === []) {
+            return $message;
+        }
+
+        return [
+            ...($text === '' ? [] : $message),
+            ...ToolCalls::outputItems($toolCalls),
+        ];
     }
 
     /**
      * What an upstream answer says it cost.
      *
-     * Public for the same reason `outputFor()` is. The keys an embedding
-     * reports are a subset of a completion's — no `completion_tokens` — so the
-     * missing one is stored as null rather than as a zero nobody measured.
+     * The keys an embedding reports are a subset of a completion's — no
+     * `completion_tokens` — so the missing one is stored as null rather than
+     * as a zero nobody measured.
      *
      * @param  array<array-key, mixed>  $completion
      * @return array<string, int|null>
      */
-    public static function usageFrom(array $completion): array
+    private static function usageFrom(array $completion): array
     {
         return [
             'input_tokens' => self::tokens($completion, 'prompt_tokens'),

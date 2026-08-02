@@ -197,3 +197,34 @@ it('refuses a signed-in operator who lost the token', function () {
         ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
         ->assertForbidden();
 });
+
+it('downloads an embedding answer as the summary the page shows', function () {
+    $entry = BacklogEntry::factory()->embedded()->create();
+
+    $response = asOperator()
+        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->assertOk();
+
+    expect($response->streamedContent())->toBe('2 embeddings × 4 dimensions');
+});
+
+it('downloads the vectors themselves as the response part', function () {
+    $entry = BacklogEntry::factory()->embedded()->create();
+
+    $response = asOperator()
+        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'response']))
+        ->assertOk();
+
+    expect($response->streamedContent())->toContain('"embedding"')
+        ->toContain('0.1');
+});
+
+it('404s the answer of an embedding that has not been run yet', function () {
+    // Not an empty file: "no answer yet" and "the answer was empty" are
+    // different facts, and a queued entry has the first one.
+    $entry = BacklogEntry::factory()->embeddings()->create();
+
+    asOperator()
+        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->assertNotFound();
+});

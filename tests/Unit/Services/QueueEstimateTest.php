@@ -223,20 +223,22 @@ it('reports no place for an entry that is no longer waiting', function (string $
 })->with(['running', 'completed', 'failed', 'cancelled']);
 
 /*
- | A synchronously answered embedding is over in milliseconds and never waited
- | for a worker. Averaged in, it would tell a caller whose completion is third
- | in line that the wait is nearly nothing.
+ | A 64-document embedding batch and a chat completion are not the same unit of
+ | work even on the same model. Averaged together, each caller is quoted the
+ | other's wait.
  */
-it('measures only what a worker actually ran', function () {
+it('measures each endpoint separately rather than averaging them together', function () {
     answeredIn(60, 'shared-model');
 
-    BacklogEntry::factory()->embeddings()->create([
+    BacklogEntry::factory()->embedded()->create([
         'model' => 'shared-model',
-        'started_at' => now()->subSecond(),
+        'started_at' => now()->subSeconds(4),
         'finished_at' => now(),
     ]);
 
-    $queued = BacklogEntry::factory()->create(['model' => 'shared-model']);
+    $chat = BacklogEntry::factory()->create(['model' => 'shared-model']);
+    $embedding = BacklogEntry::factory()->embeddings()->create(['model' => 'shared-model']);
 
-    expect(estimate()->for($queued)->estimatedSeconds)->toBe(60);
+    expect(estimate()->for($chat)->estimatedSeconds)->toBe(60)
+        ->and(estimate()->for($embedding)->estimatedSeconds)->toBe(8);
 });

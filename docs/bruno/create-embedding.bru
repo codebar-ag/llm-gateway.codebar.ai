@@ -22,12 +22,20 @@ body:json {
   }
 }
 
-docs {
-  Synchronous, not queued — no OpenAI client expects to poll for an
-  embedding. Unlike **List models** this still costs the upstream real
-  compute, so it goes through `throttle:queue` (`BACKLOG_RATE_LIMIT`) the
-  same as **Queue chat completion**.
+vars:post-response {
+  embeddingId: res.body.id
+}
 
-  Anthropic has no embeddings API; a gateway pointed at one answers with
-  Anthropic's own `404`, passed through under `error.type: upstream_error`.
+docs {
+  Queued, like every call that costs the upstream real compute. Answers
+  `202` with an `id`, a `poll_url` and the `queue` block; collect the
+  vectors with **Collect embedding**.
+
+  It used to answer inline. An indexing run posts tens of thousands of
+  batches, and answering them inline let all of them hit the backend at
+  once — queued, the workers run them one at a time and a failed batch
+  retries on its own budget instead of failing in the caller's hand.
+
+  Anthropic has no embeddings API; a gateway pointed at one records the
+  entry as failed with Anthropic's own `404`.
 }

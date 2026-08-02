@@ -14,7 +14,8 @@ use Illuminate\Support\Str;
  * Nothing here decides where a request goes or rewrites it on the way out —
  * that is a driver's job. These are the two translations the app already owed
  * its callers: Responses input into chat messages on the way in, and answer
- * text out of a completion on the way back.
+ * text out of a completion on the way back. The tool shapes either direction
+ * carries are `ToolCalls`' business, not this class's.
  */
 class ChatPayload
 {
@@ -126,7 +127,60 @@ class ChatPayload
             return collect([self::message($input)]);
         }
 
-        return collect(Arr::wrap($input))->map(self::message(...))->values();
+        /** @var Collection<int, array<string, mixed>> $empty */
+        $empty = collect();
+
+        return collect(Arr::wrap($input))
+            ->reduce(self::append(...), $empty)
+            ->values();
+    }
+
+    /**
+     * Fold one input item onto the conversation built so far.
+     *
+     * Two of them are not messages at all. A `function_call` is the assistant's
+     * own turn restated as an output item, and a `function_call_output` is the
+     * result the caller ran — chat completions spells those as an assistant
+     * message carrying `tool_calls` and a `tool` message answering one.
+     *
+     * @param  Collection<int, array<string, mixed>>  $messages
+     * @return Collection<int, array<string, mixed>>
+     */
+    private static function append(Collection $messages, mixed $item): Collection
+    {
+        return match (JsonValue::stringAt($item, 'type')) {
+            'function_call' => self::appendToolCall($messages, ToolCalls::fromInputItem($item)),
+            'function_call_output' => $messages->push([
+                'role' => 'tool',
+                'tool_call_id' => JsonValue::stringAt($item, 'call_id'),
+                'content' => self::contentText(JsonValue::at($item, 'output')),
+            ]),
+            default => $messages->push(self::message($item)),
+        };
+    }
+
+    /**
+     * Merge consecutive calls into one assistant message.
+     *
+     * A turn is one assistant message carrying N calls followed by N results.
+     * Stating the same turn as N assistant messages of one call each is what
+     * an upstream rejects, so the fold appends rather than pushes.
+     *
+     * @param  Collection<int, array<string, mixed>>  $messages
+     * @param  array<string, mixed>  $call
+     * @return Collection<int, array<string, mixed>>
+     */
+    private static function appendToolCall(Collection $messages, array $call): Collection
+    {
+        $last = $messages->last();
+
+        if ($last === null || ! is_array($last['tool_calls'] ?? null)) {
+            return $messages->push(['role' => 'assistant', 'content' => null, 'tool_calls' => [$call]]);
+        }
+
+        $last['tool_calls'] = [...$last['tool_calls'], $call];
+
+        return $messages->slice(0, -1)->push($last)->values();
     }
 
     /** @return array<string, mixed> */

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\BacklogKind;
 use App\Enums\BacklogStatus;
 use App\Http\Resources\BacklogEntryResource;
 use App\Models\BacklogEntry;
@@ -29,7 +30,7 @@ class ListResponsesController
         $model = self::text($request, 'model');
 
         $entries = BacklogEntry::query()
-            ->queueable()
+            ->ofKind(BacklogKind::Chat)
             ->ownedBy(ForwardedHeaders::keyHash($request))
             ->when($status !== '', fn ($query) => $query->where('status', $status))
             ->when($model !== '', fn ($query) => $query->where('model', $model))
