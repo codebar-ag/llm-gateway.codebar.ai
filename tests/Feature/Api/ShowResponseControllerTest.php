@@ -95,3 +95,14 @@ it('never tells a client to retry immediately', function () {
         ->assertJsonPath('queue.estimated_seconds', 0)
         ->assertHeader('Retry-After', '1');
 });
+
+it('does not answer for a synchronously answered call', function () {
+    $entry = BacklogEntry::factory()->embeddings()->create();
+
+    // 404 rather than the entry: the Responses API only knows what it queued.
+    $this->getJson("/v1/responses/{$entry->id}", gatewayAuth())->assertNotFound();
+    $this->postJson("/v1/responses/{$entry->id}/cancel", [], gatewayAuth())->assertNotFound();
+    $this->deleteJson("/v1/responses/{$entry->id}", [], gatewayAuth())->assertNotFound();
+
+    expect($entry->fresh()->trashed())->toBeFalse();
+});

@@ -186,22 +186,32 @@ const headerNamesPreview = computed(() => json(props.entry.headerNames));
                 </template>
 
                 <template #answer>
-                    <div class="flex flex-wrap items-center justify-end gap-2">
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            @click="copy(answerPreview)"
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p
+                            v-if="entry.answerNote"
+                            class="text-xs text-dim"
                         >
-                            Copy
-                        </Button>
-                        <Button
-                            as="a"
-                            :href="urls.downloads.answer"
-                            variant="secondary"
-                            size="sm"
-                        >
-                            Download {{ answerIsJson ? '.json' : '.md' }}
-                        </Button>
+                            {{ entry.answerNote }}
+                        </p>
+                        <span v-else />
+
+                        <div class="flex items-center gap-2">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                @click="copy(answerPreview)"
+                            >
+                                Copy
+                            </Button>
+                            <Button
+                                as="a"
+                                :href="urls.downloads.answer"
+                                variant="secondary"
+                                size="sm"
+                            >
+                                Download {{ answerIsJson ? '.json' : '.md' }}
+                            </Button>
+                        </div>
                     </div>
 
                     <CodePreview

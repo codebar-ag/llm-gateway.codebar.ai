@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\BacklogKind;
 use App\Enums\BacklogStatus;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
@@ -24,6 +25,7 @@ class BacklogEntryFactory extends Factory
         return [
             'id' => BacklogEntry::newId(),
             'status' => BacklogStatus::Queued,
+            'kind' => BacklogKind::Chat,
             'model' => $model,
             // The migration seeds a default gateway, so entries land on the
             // same upstream a real request without a prefix would.
@@ -99,6 +101,21 @@ class BacklogEntryFactory extends Factory
             'status' => BacklogStatus::Cancelled,
             'headers' => null,
             'finished_at' => now(),
+        ]);
+    }
+
+    /**
+     * A call this app answered itself, as `Backlog::record()` writes it: over
+     * before it was stored, tried once, and never retried.
+     */
+    public function embeddings(): static
+    {
+        return $this->completed('2 embeddings × 4 dimensions')->state(fn () => [
+            'kind' => BacklogKind::Embeddings,
+            'model' => 'nomic-embed-text',
+            'request' => ['model' => 'nomic-embed-text', 'input' => ['first', 'second']],
+            'usage' => ['input_tokens' => 4, 'output_tokens' => null, 'total_tokens' => 4],
+            'max_attempts' => 1,
         ]);
     }
 

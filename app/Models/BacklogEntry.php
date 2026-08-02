@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\BacklogKind;
 use App\Enums\BacklogStatus;
 use App\Support\UpstreamFailure;
 use Carbon\CarbonImmutable;
@@ -23,6 +24,7 @@ use Throwable;
 /**
  * @property string $id
  * @property BacklogStatus $status
+ * @property BacklogKind $kind
  * @property string|null $model
  * @property string|null $gateway_id
  * @property Gateway|null $gateway
@@ -57,7 +59,7 @@ class BacklogEntry extends Model
 
     /** @var list<string> */
     protected $fillable = [
-        'id', 'status', 'model', 'gateway_id', 'request', 'headers', 'output', 'usage',
+        'id', 'status', 'kind', 'model', 'gateway_id', 'request', 'headers', 'output', 'usage',
         'error', 'attempts', 'max_attempts', 'api_key_hash',
         'started_at', 'finished_at',
     ];
@@ -222,13 +224,16 @@ class BacklogEntry extends Model
      *
      * The measurement behind an estimate. Only completed entries are read:
      * a failure's duration is how long the upstream took to give up, which
-     * says nothing about how long an answer takes.
+     * says nothing about how long an answer takes. Queueable ones at that —
+     * a synchronously answered embedding is over in milliseconds, and mixing
+     * those in would tell a caller their chat completion is nearly done.
      *
      * @return Collection<int, int>
      */
     public static function recentDurations(?string $model, int $limit): Collection
     {
         return static::query()
+            ->queueable()
             ->where('status', BacklogStatus::Completed)
             ->whereNotNull('started_at')
             ->whereNotNull('finished_at')
@@ -259,6 +264,21 @@ class BacklogEntry extends Model
         }
 
         $query->where('api_key_hash', $keyHash);
+    }
+
+    /**
+     * The entries the Responses API knows about: the ones it queued.
+     *
+     * An embedding or a moderation is logged the same way and shows up in the
+     * dashboard beside everything else, but it was answered while the caller
+     * waited — there is no id to poll, nothing to cancel, and listing one as a
+     * `response` object would describe a call that never was one.
+     *
+     * @param  Builder<BacklogEntry>  $query
+     */
+    public function scopeQueueable(Builder $query): void
+    {
+        $query->whereIn('kind', array_filter(BacklogKind::cases(), fn (BacklogKind $kind) => $kind->isQueued()));
     }
 
     public function canRetry(): bool
@@ -425,8 +445,16 @@ class BacklogEntry extends Model
             : (string) json_encode($body, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 
-    /** @return array<int, array<string, mixed>> */
-    private static function outputFor(string $text): array
+    /**
+     * The envelope an answer is stored in.
+     *
+     * Public because a synchronously answered call is finished before it is
+     * ever written — `Backlog::record()` builds the same ending in one insert
+     * rather than a worker reaching it through `markCompleted()`.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function outputFor(string $text): array
     {
         return [[
             'type' => 'message',
@@ -437,10 +465,16 @@ class BacklogEntry extends Model
     }
 
     /**
+     * What an upstream answer says it cost.
+     *
+     * Public for the same reason `outputFor()` is. The keys an embedding
+     * reports are a subset of a completion's — no `completion_tokens` — so the
+     * missing one is stored as null rather than as a zero nobody measured.
+     *
      * @param  array<array-key, mixed>  $completion
      * @return array<string, int|null>
      */
-    private static function usageFrom(array $completion): array
+    public static function usageFrom(array $completion): array
     {
         return [
             'input_tokens' => self::tokens($completion, 'prompt_tokens'),
@@ -462,6 +496,7 @@ class BacklogEntry extends Model
     {
         return [
             'status' => BacklogStatus::class,
+            'kind' => BacklogKind::class,
             'request' => 'array',
             'headers' => 'encrypted:array',
             'output' => 'array',

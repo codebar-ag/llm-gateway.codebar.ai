@@ -14,6 +14,7 @@ class DeleteResponseController
     public function __invoke(Request $request, string $id): JsonResponse
     {
         BacklogEntry::query()
+            ->queueable()
             ->ownedBy(ForwardedHeaders::keyHash($request))
             ->findOrFail($id)
             ->delete();

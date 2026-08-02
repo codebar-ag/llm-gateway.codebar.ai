@@ -247,6 +247,7 @@ it('does not rebuild the filter dropdowns on the auto-refresh reload', function 
     $props = $this->get('/', autoRefreshHeaders())->assertOk()->json('props');
 
     expect($props)->toHaveKeys(['entries', 'statuses', 'total', 'oldestQueued', 'summary'])
+        ->and($props)->not->toHaveKey('kinds')
         ->and($props)->not->toHaveKey('models')
         ->and($props)->not->toHaveKey('gateways')
         ->and($props)->not->toHaveKey('callers');
@@ -298,4 +299,56 @@ it('names a caller in the filter with the label the listing rows use', function 
 
     expect(array_column($props['callers'], 'label'))->toContain('billing-service')
         ->and($props['entries'][0]['caller']['label'])->toBe('billing-service');
+});
+
+it('lists a synchronously answered call beside everything else', function () {
+    $embedding = BacklogEntry::factory()->embeddings()->create();
+
+    $props = inertiaProps($this->get('/')->assertOk());
+
+    // The endpoint is named only where it is not the chat completion the rest
+    // of the listing is, so an embedding row cannot be mistaken for one.
+    expect($props['entries'][0]['id'])->toBe($embedding->id)
+        ->and($props['entries'][0]['kind'])->toBe('embeddings')
+        ->and($props['entries'][0]['model'])->toBe('nomic-embed-text');
+});
+
+it('leaves the endpoint off a queued chat row', function () {
+    BacklogEntry::factory()->create();
+
+    expect(inertiaProps($this->get('/')->assertOk())['entries'][0]['kind'])->toBeNull();
+});
+
+it('filters by endpoint', function () {
+    $embedding = BacklogEntry::factory()->embeddings()->create();
+    BacklogEntry::factory()->count(2)->create();
+
+    $props = inertiaProps($this->get('/?kind=embeddings')->assertOk());
+
+    expect($props['entries'])->toHaveCount(1)
+        ->and($props['entries'][0]['id'])->toBe($embedding->id)
+        ->and($props['total'])->toBe(1);
+});
+
+it('offers every endpoint in the filter, including ones nothing has used yet', function () {
+    expect(array_column(inertiaProps($this->get('/')->assertOk())['kinds'], 'value'))
+        ->toBe(['chat', 'embeddings', 'moderations']);
+});
+
+it('reads an unknown endpoint as no filter rather than as an empty listing', function () {
+    BacklogEntry::factory()->count(2)->create();
+
+    $props = inertiaProps($this->get('/?kind=nonsense')->assertOk());
+
+    expect($props['entries'])->toHaveCount(2)
+        ->and($props['filters']['areEmpty'])->toBeTrue();
+});
+
+it('counts a synchronously answered call in the status tiles', function () {
+    BacklogEntry::factory()->embeddings()->create();
+
+    $completed = collect(inertiaProps($this->get('/')->assertOk())['statuses'])
+        ->firstWhere('value', 'completed');
+
+    expect($completed['count'])->toBe(1);
 });

@@ -6,6 +6,7 @@ import Dashboard from '../Layouts/Dashboard.vue';
 const props = defineProps({
     filters: { type: Object, required: true },
     statuses: { type: Array, required: true },
+    kinds: { type: Array, required: true },
     models: { type: Array, required: true },
     gateways: { type: Array, required: true },
     callers: { type: Array, required: true },
@@ -33,6 +34,7 @@ const columns = [
 
 const form = reactive({
     q: props.filters.search,
+    kind: props.filters.kind,
     model: props.filters.model,
     gateway: props.filters.gateway,
     caller: props.filters.caller,
@@ -131,6 +133,20 @@ usePoll(15000, {
 
                 <div class="min-w-40 flex-1">
                     <Field
+                        label="Endpoint"
+                        name="kind"
+                    >
+                        <Select
+                            v-model="form.kind"
+                            name="kind"
+                            :options="kinds"
+                            placeholder="All endpoints"
+                        />
+                    </Field>
+                </div>
+
+                <div class="min-w-40 flex-1">
+                    <Field
                         label="Model"
                         name="model"
                     >
@@ -218,7 +234,11 @@ usePoll(15000, {
                 <template #cell-gateway="{ row }">
                     <div class="leading-tight">
                         <div>{{ row.gateway }}</div>
-                        <div class="text-xs text-dim">{{ row.model }}</div>
+                        <!-- The endpoint only appears when it is not a chat
+                             completion — see the row's `kind`. -->
+                        <div class="text-xs text-dim">
+                            {{ row.model }}<template v-if="row.kind"> &middot; {{ row.kind }}</template>
+                        </div>
                     </div>
                 </template>
 

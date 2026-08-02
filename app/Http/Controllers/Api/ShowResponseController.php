@@ -17,6 +17,7 @@ class ShowResponseController
     public function __invoke(Request $request, string $id, QueueEstimate $estimate): JsonResponse
     {
         $entry = BacklogEntry::query()
+            ->queueable()
             ->ownedBy(ForwardedHeaders::keyHash($request))
             ->findOrFail($id);
 

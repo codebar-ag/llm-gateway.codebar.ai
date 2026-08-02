@@ -45,7 +45,13 @@ and `POST /v1/moderations` — none of them fit the `background: true` shape a
 completion does, so all four are answered straight from the upstream instead
 of through the backlog. Models is a cheap, idempotent read; embeddings and
 moderations still cost the upstream real compute, so they share the queue's
-per-caller rate limit even though nothing about them is queued.
+per-caller rate limit even though nothing about them is queued — and they are
+**logged like everything else**. Not waiting for a worker is a routing
+decision, not a reason to leave a call out of the record: each one is written
+as a finished entry the moment it is answered, so the dashboard accounts for
+every request this gateway forwards. Filter for them with the *Endpoint*
+dropdown. They stay out of `GET /v1/responses`, which only knows the entries
+it queued.
 
 ## The problem
 
@@ -114,8 +120,8 @@ provide. This is that same tool, published as-is.
 | `DELETE /v1/responses/{id}` | remove the entry from the API; the row is kept |
 | `GET /v1/models` | **synchronous** — the resolved gateway's models, OpenAI-list shaped |
 | `GET /v1/models/{id}` | **synchronous** — `404` (`model_not_found`) if the gateway does not list it |
-| `POST /v1/embeddings` | **synchronous**, rate limited like a queued write — real upstream compute, not a plain read |
-| `POST /v1/moderations` | **synchronous**, rate limited like a queued write |
+| `POST /v1/embeddings` | **synchronous**, logged, rate limited like a queued write — real upstream compute, not a plain read |
+| `POST /v1/moderations` | **synchronous**, logged, rate limited like a queued write |
 | `GET /up` | liveness — `200` once the app boots |
 | anything else under `/v1` | `404` with an async-only hint |
 
@@ -346,7 +352,10 @@ if you want streaming, call the backend directly.
 ## Dashboard
 
 `GET /` renders a read-only dashboard — counts per status, the 100 most recent
-entries per page, wait times, durations and error details. `GET /entries/{id}`
+entries per page, wait times, durations and error details, filtered by entry id,
+endpoint, model, gateway or caller. Every call this app forwards is in there,
+queued or not: an embedding shows up beside a completion, marked with the
+endpoint it came in on. `GET /entries/{id}`
 shows one entry in full: the request that went upstream (**including the whole
 prompt, and for vision calls the base64 image**), the answer, the usage and the
 names — never the values — of the forwarded headers.

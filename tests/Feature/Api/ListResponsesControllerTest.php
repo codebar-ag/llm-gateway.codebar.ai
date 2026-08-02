@@ -142,3 +142,19 @@ it('still refuses a status it has never heard of', function () {
         ->assertStatus(422)
         ->assertJsonPath('error.type', 'invalid_request');
 });
+
+/*
+ | A synchronously answered call is logged like everything else and shows up in
+ | the dashboard, but the Responses API never accepted it as a response: there
+ | is no id to poll, nothing to cancel, and listing one would describe a call
+ | that was over before the caller's connection closed.
+ */
+it('leaves a synchronously answered call out of the listing', function () {
+    $queued = BacklogEntry::factory()->create();
+    BacklogEntry::factory()->embeddings()->create();
+
+    $this->getJson('/v1/responses', gatewayAuth())
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $queued->id);
+});

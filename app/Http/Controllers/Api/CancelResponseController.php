@@ -15,6 +15,7 @@ class CancelResponseController
     public function __invoke(Request $request, string $id): JsonResponse
     {
         $entry = BacklogEntry::query()
+            ->queueable()
             ->ownedBy(ForwardedHeaders::keyHash($request))
             ->findOrFail($id);
 

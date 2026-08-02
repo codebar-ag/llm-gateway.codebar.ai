@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web;
 
+use App\Enums\BacklogKind;
 use App\Enums\BacklogStatus;
 use App\Models\ApiKeyLabel;
 use App\Models\BacklogEntry;
@@ -45,6 +46,7 @@ class ShowBacklogController
         return Inertia::render('Backlog', [
             'filters' => [
                 'status' => $filters->status?->value,
+                'kind' => $filters->kind?->value,
                 'model' => $filters->model,
                 'search' => $filters->search,
                 'gateway' => $filters->gateway,
@@ -65,6 +67,9 @@ class ShowBacklogController
              | that first sighting, and a TTL is a staleness window bought for
              | work Inertia is already skipping.
              */
+            // Not lazy, unlike the three below it: the kinds are the enum's
+            // own cases, so there is no query to skip.
+            'kinds' => self::kindOptions(),
             'models' => fn (): array => self::modelOptions(),
             'gateways' => fn (): array => self::gatewayOptions(),
             'callers' => fn (): array => self::callerOptions($labels),
@@ -89,6 +94,23 @@ class ShowBacklogController
                 'backlog' => route('backlog'),
             ],
         ]);
+    }
+
+    /**
+     * Every endpoint an entry can have been logged for, for the filter.
+     *
+     * Taken from the enum rather than from what the table happens to hold, so
+     * "no embeddings today" is a listing that comes back empty rather than a
+     * filter that quietly disappears.
+     *
+     * @return array<int, array{value: string, label: string}>
+     */
+    private static function kindOptions(): array
+    {
+        return array_map(
+            fn (BacklogKind $kind): array => ['value' => $kind->value, 'label' => $kind->label()],
+            BacklogKind::cases(),
+        );
     }
 
     /**
@@ -131,6 +153,10 @@ class ShowBacklogController
         return [
             'id' => $entry->id,
             'model' => $entry->model ?? '—',
+            // Only when it is not the chat completion everything else on this
+            // page is: naming the norm on every row would be noise, and an
+            // embedding row that looks like a completion is the confusion.
+            'kind' => $entry->kind->isQueued() ? null : $entry->kind->label(),
             'gateway' => $gateway === null ? '—' : $gateway->name,
             'caller' => self::caller($entry->api_key_hash, $labels),
             'status' => [

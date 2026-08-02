@@ -221,3 +221,22 @@ it('reports no place for an entry that is no longer waiting', function (string $
 
     expect(estimate()->for($entry))->toBeNull();
 })->with(['running', 'completed', 'failed', 'cancelled']);
+
+/*
+ | A synchronously answered embedding is over in milliseconds and never waited
+ | for a worker. Averaged in, it would tell a caller whose completion is third
+ | in line that the wait is nearly nothing.
+ */
+it('measures only what a worker actually ran', function () {
+    answeredIn(60, 'shared-model');
+
+    BacklogEntry::factory()->embeddings()->create([
+        'model' => 'shared-model',
+        'started_at' => now()->subSecond(),
+        'finished_at' => now(),
+    ]);
+
+    $queued = BacklogEntry::factory()->create(['model' => 'shared-model']);
+
+    expect(estimate()->for($queued)->estimatedSeconds)->toBe(60);
+});

@@ -2,24 +2,36 @@
 
 declare(strict_types=1);
 
+use App\Enums\BacklogKind;
+use App\Enums\BacklogStatus;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-it('answers the default gateway synchronously, not through the backlog', function () {
+it('answers the default gateway synchronously, and logs the call', function () {
     Http::fake(['http://upstream.invalid/v1/moderations' => Http::response([
         'id' => 'modr-1',
         'model' => 'omni-moderation-latest',
         'results' => [['flagged' => false]],
     ])]);
 
-    $this->postJson('/v1/moderations', ['input' => 'hello'], gatewayAuth())
+    $this->postJson('/v1/moderations', ['model' => 'omni-moderation-latest', 'input' => 'hello'], gatewayAuth())
         ->assertOk()
         ->assertJsonPath('results.0.flagged', false);
 
-    expect(BacklogEntry::count())->toBe(0);
+    $entry = BacklogEntry::sole();
+
+    expect($entry->status)->toBe(BacklogStatus::Completed)
+        ->and($entry->kind)->toBe(BacklogKind::Moderations)
+        // Small enough to keep whole, unlike an embedding's vectors: the
+        // verdict is the only thing anyone comes back to a moderation for.
+        ->and(data_get($entry->output, '0.content.0.text'))->toContain('"flagged": false')
+        // Nothing upstream reported a token count, which is not the same as
+        // having counted zero.
+        ->and($entry->usage)->toBeNull();
+
     Http::assertSent(fn (Request $request) => $request->method() === 'POST'
         && $request->url() === 'http://upstream.invalid/v1/moderations'
         && $request['input'] === 'hello'
@@ -48,6 +60,12 @@ it('passes an upstream error through with its own status for a protocol that has
         ->assertStatus(404)
         ->assertJsonPath('error.type', 'upstream_error')
         ->assertJsonPath('error.body', '404 page not found');
+
+    // Logged as the failure it was: an upstream that has no such endpoint is
+    // exactly the thing an operator opens the dashboard to find out.
+    expect(BacklogEntry::sole())
+        ->status->toBe(BacklogStatus::Failed)
+        ->and(BacklogEntry::sole()->error['status'])->toBe(404);
 });
 
 it('answers 502 when the upstream cannot be reached', function () {

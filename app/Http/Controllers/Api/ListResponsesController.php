@@ -29,6 +29,7 @@ class ListResponsesController
         $model = self::text($request, 'model');
 
         $entries = BacklogEntry::query()
+            ->queueable()
             ->ownedBy(ForwardedHeaders::keyHash($request))
             ->when($status !== '', fn ($query) => $query->where('status', $status))
             ->when($model !== '', fn ($query) => $query->where('model', $model))

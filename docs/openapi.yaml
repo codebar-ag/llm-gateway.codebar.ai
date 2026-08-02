@@ -178,6 +178,12 @@ paths:
         (`BACKLOG_RATE_LIMIT`) rather than going unthrottled like a plain
         read. Anthropic has no embeddings API; a gateway pointed at one
         answers with Anthropic's own `404`.
+
+        Logged all the same: the call is written to the backlog as a finished
+        entry — caller, model, gateway, token usage and any upstream error —
+        so the dashboard accounts for it. Only the vectors are left out; they
+        went to the caller, and the entry keeps their shape instead. It is not
+        listed by `GET /v1/responses`, which only knows what it queued.
       requestBody:
         required: true
         content:
@@ -231,8 +237,8 @@ paths:
       tags: [Synchronous]
       summary: Run a moderation check
       description: |
-        Answered synchronously, rate limited the same way `POST /v1/embeddings`
-        is. Only OpenAI-compatible upstreams have ever implemented this
+        Answered synchronously and logged the same way `POST /v1/embeddings`
+        is, rate limited the same way too. Only OpenAI-compatible upstreams have ever implemented this
         endpoint — a gateway on Anthropic or Ollama forwards the request
         anyway and passes that upstream's own `404` straight back, rather
         than this app guessing at support it cannot verify.

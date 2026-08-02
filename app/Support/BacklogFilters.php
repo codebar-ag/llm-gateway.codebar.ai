@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Enums\BacklogKind;
 use App\Enums\BacklogStatus;
 use App\Models\ApiKeyLabel;
 use App\Models\BacklogEntry;
@@ -24,6 +25,7 @@ readonly class BacklogFilters
 
     public function __construct(
         public ?BacklogStatus $status,
+        public ?BacklogKind $kind,
         public string $model,
         public string $search,
         public string $gateway,
@@ -34,6 +36,9 @@ readonly class BacklogFilters
     {
         return new self(
             status: BacklogStatus::tryFrom(self::text($request, 'status')),
+            // An unknown kind reads as no filter rather than as an empty
+            // listing, the same way an unknown status does.
+            kind: BacklogKind::tryFrom(self::text($request, 'kind')),
             model: self::text($request, 'model'),
             search: self::text($request, 'q'),
             gateway: self::text($request, 'gateway'),
@@ -44,6 +49,7 @@ readonly class BacklogFilters
     public function areEmpty(): bool
     {
         return $this->status === null
+            && $this->kind === null
             && $this->model === ''
             && $this->search === ''
             && $this->gateway === ''
@@ -55,6 +61,7 @@ readonly class BacklogFilters
     {
         return BacklogEntry::query()
             ->when($this->status, fn (Builder $query, BacklogStatus $status) => $query->where('status', $status))
+            ->when($this->kind, fn (Builder $query, BacklogKind $kind) => $query->where('kind', $kind))
             ->when($this->model !== '', fn (Builder $query) => $query->where('model', $this->model))
             ->when($this->gateway !== '', fn (Builder $query) => $query->where('gateway_id', $this->gateway))
             // Through the same scope /v1/responses narrows by, so "this

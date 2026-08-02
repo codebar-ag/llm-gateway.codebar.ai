@@ -197,3 +197,22 @@ it('says nothing about the protocol when the gateway is gone entirely', function
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page->where('entry.protocolNote', null));
 });
+
+it('names the endpoint a synchronously answered call was logged for', function () {
+    $entry = BacklogEntry::factory()->embeddings()->create();
+
+    $props = inertiaProps($this->get(route('backlog.entry', $entry->id))->assertOk());
+
+    expect(collect($props['entry']['facts'])->firstWhere('label', 'Endpoint')['value'])
+        ->toBe('embeddings')
+        // The vectors are not stored, and the pane says so rather than reading
+        // as an upstream that answered with one line of prose.
+        ->and($props['entry']['answerNote'])->toContain('not stored');
+});
+
+it('says nothing about the answer of an entry a worker ran', function () {
+    $entry = BacklogEntry::factory()->completed()->create();
+
+    expect(inertiaProps($this->get(route('backlog.entry', $entry->id))->assertOk())['entry']['answerNote'])
+        ->toBeNull();
+});

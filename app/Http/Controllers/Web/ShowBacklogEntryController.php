@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web;
 
 use App\Enums\AnswerFormat;
+use App\Enums\BacklogKind;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
 use App\Support\Duration;
@@ -45,6 +46,7 @@ class ShowBacklogEntryController
                 'tone' => $entry->status->tone(),
             ],
             'facts' => [
+                ['label' => 'Endpoint', 'value' => $entry->kind->label()],
                 ['label' => 'Model', 'value' => $entry->model ?? '—', 'exact' => $entry->model],
                 ['label' => 'Gateway', 'value' => $gateway === null ? '—' : $gateway->name],
                 // Long enough to be truncated in its tile, so it carries the
@@ -64,6 +66,7 @@ class ShowBacklogEntryController
             ],
             'answer' => $answer,
             'answerFormat' => AnswerFormat::of(is_string($answer) ? $answer : null)->value,
+            'answerNote' => self::answerNote($entry),
             'protocolNote' => self::protocolNote($gateway),
             'request' => $entry->request,
             'usage' => $entry->usage,
@@ -94,6 +97,20 @@ class ShowBacklogEntryController
             'answer' => route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']),
             'error' => route('backlog.entry.download', ['id' => $entry->id, 'part' => 'error']),
         ];
+    }
+
+    /**
+     * Warn that the answer shown is not the answer the caller received.
+     *
+     * An embedding entry keeps the shape of the vectors instead of the vectors
+     * themselves — see `Backlog::record()`. Without saying so, the pane reads
+     * as an upstream that answered with one line of prose.
+     */
+    private static function answerNote(BacklogEntry $entry): ?string
+    {
+        return $entry->kind === BacklogKind::Embeddings
+            ? 'Summarised: the vectors went to the caller and are not stored — one batch of them is megabytes of floats.'
+            : null;
     }
 
     /**
