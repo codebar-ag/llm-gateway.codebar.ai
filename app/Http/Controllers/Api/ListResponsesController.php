@@ -19,16 +19,19 @@ class ListResponsesController
 
     public function __invoke(Request $request): JsonResponse
     {
-        $unknownStatus = self::unknownStatus($request);
+        $invalid = self::invalidFilter($request);
 
-        if ($unknownStatus !== null) {
-            return $unknownStatus;
+        if ($invalid !== null) {
+            return $invalid;
         }
+
+        $status = self::text($request, 'status');
+        $model = self::text($request, 'model');
 
         $entries = BacklogEntry::query()
             ->ownedBy(ForwardedHeaders::keyHash($request))
-            ->when($request->query('status'), fn ($query, $status) => $query->where('status', $status))
-            ->when($request->query('model'), fn ($query, $model) => $query->where('model', $model))
+            ->when($status !== '', fn ($query) => $query->where('status', $status))
+            ->when($model !== '', fn ($query) => $query->where('model', $model))
             ->latest()
             ->limit(self::limit($request))
             ->get();
@@ -40,17 +43,27 @@ class ListResponsesController
     }
 
     /**
-     * Refuse a status this app has never heard of, rather than filtering on it.
+     * Refuse a filter this app cannot honour, rather than narrowing by it.
      *
      * A request *body* is deliberately never inspected — it is the upstream's to
      * judge. A filter is different: nothing downstream will ever see it, so a
      * typo would silently read as "no entries" instead of "no such status".
+     *
+     * Two ways one arrives unusable, and both have to answer 422 rather than
+     * fall through to the builder:
+     *
+     * - a status this app has never heard of;
+     * - a repeated parameter such as `?status[]=queued`, which is a malformed
+     *   URL rather than a filter. That one used to slip past entirely: the
+     *   check only looked at strings, and an array binding is flattened to its
+     *   first element on the way to the query, so the caller was quietly
+     *   filtered on something they had not asked for.
      */
-    private static function unknownStatus(Request $request): ?JsonResponse
+    private static function invalidFilter(Request $request): ?JsonResponse
     {
-        $status = $request->query('status');
+        $status = self::text($request, 'status');
 
-        if (! is_string($status) || $status === '' || BacklogStatus::tryFrom($status) instanceof BacklogStatus) {
+        if ($status === '' || BacklogStatus::tryFrom($status) instanceof BacklogStatus) {
             return null;
         }
 
@@ -61,6 +74,26 @@ class ListResponsesController
                 'type' => 'invalid_request',
             ],
         ], 422);
+    }
+
+    /**
+     * A query parameter as the single value a filter has to be.
+     *
+     * `?status[]=queued` is a malformed URL rather than a filter, and reads as
+     * none — the same rule `BacklogFilters::text()` applies to the dashboard's
+     * query string, and what this endpoint's own test has always said it does.
+     *
+     * It did not, quite. The guard above only ever looked at strings, so an
+     * array fell past it; and an array binding is flattened to its first
+     * element on the way to the query, so the caller was quietly narrowed by a
+     * value they had not asked to filter on. Reading it here makes the
+     * behaviour the name.
+     */
+    private static function text(Request $request, string $key): string
+    {
+        $value = $request->query($key);
+
+        return is_scalar($value) ? trim((string) $value) : '';
     }
 
     /**

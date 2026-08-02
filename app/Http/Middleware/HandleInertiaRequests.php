@@ -19,18 +19,11 @@ class HandleInertiaRequests extends Middleware
 {
     protected $rootView = 'app';
 
-    public function version(Request $request): ?string
-    {
-        return parent::version($request);
-    }
-
     /** @return array<string, mixed> */
     public function share(Request $request): array
     {
         return [
             ...parent::share($request),
-
-            'name' => config('app.name'),
 
             /*
              | Name and address only. The layout greets the operator with it,

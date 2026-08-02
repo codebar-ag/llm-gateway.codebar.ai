@@ -2,9 +2,35 @@
 
 declare(strict_types=1);
 
+use App\Http\Middleware\HandleInertiaRequests;
+use App\Models\ApiKeyLabel;
 use App\Models\BacklogEntry;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia;
+
+/**
+ * The headers `usePoll` puts on the wire for the backlog's 15-second refresh.
+ *
+ * Kept in step with the `only:` list in resources/js/Pages/Backlog.vue by hand:
+ * these tests assert that the props NOT named there are skipped, so a prop
+ * added to one side and not the other should fail here rather than quietly
+ * start costing a query again.
+ *
+ * The version has to come from the middleware rather than `Inertia::getVersion()`.
+ * The facade only learns it once a request has passed through, so a test whose
+ * first request is the partial one would otherwise be answered with a 409.
+ *
+ * @return array<string, string>
+ */
+function autoRefreshHeaders(): array
+{
+    return [
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => (string) (new HandleInertiaRequests)->version(request()),
+        'X-Inertia-Partial-Component' => 'Backlog',
+        'X-Inertia-Partial-Data' => 'entries,statuses,total,oldestQueued,summary,pagination',
+    ];
+}
 
 it('renders the backlog page for an operator holding the dashboard token', function () {
     $this->get('/')
@@ -213,4 +239,63 @@ it('shows an unknown tunnel when none is configured', function () {
     config(['gateway.tunnel.metrics_url' => '']);
 
     expect(inertiaProps($this->get('/')->assertOk())['tunnel']['label'])->toBe('tunnel unknown');
+});
+
+it('does not rebuild the filter dropdowns on the auto-refresh reload', function () {
+    BacklogEntry::factory()->count(5)->create();
+
+    $props = $this->get('/', autoRefreshHeaders())->assertOk()->json('props');
+
+    expect($props)->toHaveKeys(['entries', 'statuses', 'total', 'oldestQueued', 'summary'])
+        ->and($props)->not->toHaveKey('models')
+        ->and($props)->not->toHaveKey('gateways')
+        ->and($props)->not->toHaveKey('callers');
+});
+
+/*
+ | The whole point of the closures. The dropdowns are three unbounded aggregates
+ | over a table that only grows — a DISTINCT scan, every gateway, and a GROUP BY
+ | with min/max over every row — and the page asked for all three every fifteen
+ | seconds only to have Inertia throw the answers away. This asserts on the gap
+ | rather than on an exact count, so adding a query to either path is allowed
+ | but collapsing the gap is not.
+ */
+it('runs fewer queries on the auto-refresh reload than on a full page load', function () {
+    BacklogEntry::factory()->count(5)->create();
+
+    // Warm-up: the first request of a test pays one-off costs that would land
+    // on whichever of the two ran first.
+    $this->get('/')->assertOk();
+
+    $full = queriesDuring(fn () => $this->get('/')->assertOk());
+    $partial = queriesDuring(fn () => $this->get('/', autoRefreshHeaders())->assertOk());
+
+    expect($partial)->toBeLessThan($full);
+});
+
+it('still picks up a newly seen model on a full page load', function () {
+    BacklogEntry::factory()->create(['model' => 'alpha-model']);
+
+    $before = inertiaProps($this->get('/')->assertOk())['models'];
+
+    BacklogEntry::factory()->create(['model' => 'beta-model']);
+
+    $after = inertiaProps($this->get('/')->assertOk())['models'];
+
+    expect(array_column($before, 'value'))->toBe(['alpha-model'])
+        ->and(array_column($after, 'value'))->toBe(['alpha-model', 'beta-model']);
+});
+
+it('names a caller in the filter with the label the listing rows use', function () {
+    $entry = BacklogEntry::factory()->create(['api_key_hash' => str_repeat('a', 64)]);
+
+    ApiKeyLabel::factory()->create([
+        'api_key_hash' => $entry->api_key_hash,
+        'name' => 'billing-service',
+    ]);
+
+    $props = inertiaProps($this->get('/')->assertOk());
+
+    expect(array_column($props['callers'], 'label'))->toContain('billing-service')
+        ->and($props['entries'][0]['caller']['label'])->toBe('billing-service');
 });

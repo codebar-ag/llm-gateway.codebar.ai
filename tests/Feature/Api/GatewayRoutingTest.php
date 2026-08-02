@@ -138,7 +138,7 @@ it('keeps the rate limit envelope for prefixed requests', function () {
 it('still refuses unknown prefixed endpoints as async only', function () {
     $gateway = Gateway::factory()->create();
 
-    $this->postJson("/{$gateway->id}/v1/embeddings", [], gatewayAuth())
+    $this->postJson("/{$gateway->id}/v1/files", [], gatewayAuth())
         ->assertNotFound()
         ->assertJsonPath('error.type', 'async_only');
 });

@@ -24,7 +24,22 @@ const GLOBAL = new Set(['class', 'style', 'id', 'key', 'ref', 'slot'])
 
 /** Components whose root is a native element the listed attributes belong to,
  *  where fallthrough is the intended behaviour rather than a mistake. */
-const FALLTHROUGH = { Input: ['placeholder', 'autocomplete', 'autofocus', 'inputmode', 'min', 'max', 'step'] }
+/*
+ | Attributes a component does not declare but is still right to receive,
+ | because its root really is the native element they belong to and Vue's
+ | fallthrough puts them there.
+ |
+ | `Button` renders a native <button>, so `aria-label` lands on it. It is worth
+ | the exception: two of these atoms carry the same caption in different states
+ | ("Name" / "Rename"), and a label is what tells a screen reader — and a test —
+ | which control it has hold of without matching on that caption.
+ */
+const FALLTHROUGH = {
+    Input: ['placeholder', 'autocomplete', 'autofocus', 'inputmode', 'min', 'max', 'step'],
+    // Both spellings: the scanner reads `:aria-label` off the template as the
+    // camelCase `ariaLabel`, while a plain `aria-label="…"` stays hyphenated.
+    Button: ['aria-label', 'ariaLabel'],
+}
 
 const dts = readFileSync(DTS, 'utf8')
 

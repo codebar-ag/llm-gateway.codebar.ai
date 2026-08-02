@@ -8,9 +8,13 @@ use Illuminate\Support\Str;
  | Partial override — all other session options come from the framework
  | defaults (vendor/laravel/framework/config/session.php).
  |
- | Nothing in this app stores anything in the session: the dashboard is
- | read-only and the API is stateless. Only the two options whose framework
- | default would be wrong here are set.
+ | The API is stateless and never touches the session. The dashboard does: it
+ | carries the operator's login and the password fingerprint `auth.session`
+ | compares on every request, which is what makes `user:reset-password` sign
+ | live browsers out. Only the two options whose framework default would be
+ | wrong here are set; `SESSION_SECURE_COOKIE` is pinned in .env.example
+ | rather than here, because whether TLS is terminated in front of the app is
+ | a deployment question rather than an application one.
  */
 
 return [

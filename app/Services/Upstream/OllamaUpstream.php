@@ -4,38 +4,27 @@ declare(strict_types=1);
 
 namespace App\Services\Upstream;
 
-use App\Models\Gateway;
 use App\Support\ChatPayload;
 use App\Support\JsonValue;
-use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Http;
 
 /**
  * Ollama's native /api/chat.
  *
  * Ollama ignores an Authorization header, but the caller's headers are
  * forwarded anyway: an Ollama box exposed through an authenticating reverse
- * proxy is common, and dropping the credential would break it for no gain.
+ * proxy is common, and dropping the credential would break it for no gain —
+ * which is exactly `Upstream`'s default, so no header mapping lives here.
  *
  * `stream` is pinned false. This app answers by polling, so a streamed
  * response would arrive as newline-delimited JSON that nothing here reads.
+ *
+ * Moderations are left to `Upstream`'s passthrough: Ollama has no moderation
+ * model or endpoint of its own, so the request is forwarded as-is and
+ * Ollama's own 404 tells the caller this upstream cannot answer it.
  */
-class OllamaUpstream implements UpstreamDriver
+class OllamaUpstream extends Upstream
 {
-    /**
-     * @param  array<string, mixed>  $payload
-     * @param  array<string, string>  $headers
-     */
-    public function send(Gateway $gateway, array $payload, array $headers): Response
-    {
-        return Http::withHeaders($headers)
-            ->timeout($gateway->timeout)
-            ->connectTimeout($gateway->connect_timeout)
-            ->post($gateway->endpoint(), $this->body($payload))
-            ->throw();
-    }
-
     /**
      * @param  array<array-key, mixed>  $body
      * @return array<array-key, mixed>
@@ -65,27 +54,75 @@ class OllamaUpstream implements UpstreamDriver
     }
 
     /**
-     * A count the upstream did not report stays null rather than being summed
-     * as a zero, so "it did not say" keeps reading differently from "none".
-     *
-     * @return array<string, int|null>
+     * @param  array<array-key, mixed>  $body
+     * @return array<array-key, mixed>
      */
-    private static function usage(?int $promptTokens, ?int $completionTokens): array
+    public function normaliseModels(array $body): array
     {
-        $reported = array_filter([$promptTokens, $completionTokens], fn (?int $count) => $count !== null);
+        return [
+            'object' => 'list',
+            'data' => collect(JsonValue::arrayAt($body, 'models'))
+                ->map(fn (mixed $model) => [
+                    'id' => JsonValue::stringAt($model, 'name') ?: JsonValue::stringAt($model, 'model'),
+                    'object' => 'model',
+                    'created' => self::timestamp(JsonValue::stringAt($model, 'modified_at')),
+                    'owned_by' => 'ollama',
+                ])
+                ->filter(fn (array $model) => $model['id'] !== '')
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $body
+     * @return array<array-key, mixed>
+     */
+    public function normaliseEmbeddings(array $body): array
+    {
+        // Ollama reports one count for the whole batch, not per input; OpenAI
+        // has no batch-level field for it, so it is repeated into the total.
+        $promptTokens = JsonValue::intAt($body, 'prompt_eval_count');
 
         return [
-            'prompt_tokens' => $promptTokens,
-            'completion_tokens' => $completionTokens,
-            'total_tokens' => $reported === [] ? null : array_sum($reported),
+            'object' => 'list',
+            'data' => collect(JsonValue::arrayAt($body, 'embeddings'))
+                ->values()
+                ->map(fn (mixed $embedding, int $index) => [
+                    'object' => 'embedding',
+                    'embedding' => is_array($embedding) ? array_values($embedding) : [],
+                    'index' => $index,
+                ])
+                ->all(),
+            'model' => JsonValue::stringAt($body, 'model'),
+            'usage' => [
+                'prompt_tokens' => $promptTokens,
+                'total_tokens' => $promptTokens,
+            ],
         ];
+    }
+
+    /**
+     * Ollama's native `/api/embed` takes the same `model` and `input` keys
+     * OpenAI's embeddings request does, so nothing is renamed — only the
+     * keys Ollama does not read are dropped, and the answer is reshaped.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected function embeddingsBody(array $payload): array
+    {
+        return array_filter([
+            'model' => JsonValue::stringAt($payload, 'model'),
+            'input' => JsonValue::at($payload, 'input'),
+        ], fn (mixed $value) => $value !== null && $value !== '' && $value !== []);
     }
 
     /**
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    private function body(array $payload): array
+    protected function body(array $payload): array
     {
         return array_filter([
             'model' => JsonValue::stringAt($payload, 'model'),

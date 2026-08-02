@@ -22,7 +22,6 @@ class ListCallersController
             'callers' => self::rows($labels),
             'urls' => [
                 'store' => route('callers.store'),
-                'backlog' => route('backlog'),
             ],
         ]);
     }

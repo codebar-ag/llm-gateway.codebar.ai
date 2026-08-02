@@ -87,7 +87,7 @@ it('names the shared anonymous row through the sentinel, and it stays a single r
 
     $page->navigate('/callers')
         ->assertSee('no key')
-        ->click('button:text-is("Name")')
+        ->click('button[aria-label="Name caller"]')
         ->assertValue('input[name="name"]', '')
         ->fill('name', 'Unkeyed batch')
         ->click('button[type="submit"]')
@@ -108,7 +108,7 @@ it('names an unnamed caller through the inline edit form, and closes it on succe
     $page->navigate('/callers')
         ->assertSee('unnamed')
         ->assertMissing('input[name="name"]')
-        ->click('button:text-is("Name")')
+        ->click('button[aria-label="Name caller"]')
         ->assertValue('input[name="name"]', '')
         ->fill('name', 'Nightly batch')
         ->click('button[type="submit"]')
@@ -130,7 +130,7 @@ it('renames a named caller, prefilling the edit form with its current name', fun
 
     $page->navigate('/callers')
         ->assertSee('Old name')
-        ->click('button:text-is("Rename")')
+        ->click('button[aria-label="Rename caller"]')
         ->assertValue('input[name="name"]', 'Old name')
         ->fill('name', 'New name')
         ->click('button[type="submit"]')
@@ -149,7 +149,7 @@ it('cancels the edit form without submitting or persisting the typed value', fun
     [$page] = signIn();
 
     $page->navigate('/callers')
-        ->click('button:text-is("Rename")')
+        ->click('button[aria-label="Rename caller"]')
         ->fill('name', 'Should not save')
         ->click('button:text-is("Cancel")')
         ->assertMissing('input[name="name"]')
@@ -234,7 +234,7 @@ it('surfaces a duplicate name through the page-level paragraph, not an inline fi
         // This page never wraps the rename form in <Field>, so there is no
         // role="alert" error paragraph anywhere on it to begin with.
         ->assertMissing('p[role="alert"]')
-        ->click('button:text-is("Name")')
+        ->click('button[aria-label="Name caller"]')
         ->fill('name', 'Taken')
         ->click('button[type="submit"]')
         ->assertSeeIn('p.text-danger', 'Another caller already goes by that name.')

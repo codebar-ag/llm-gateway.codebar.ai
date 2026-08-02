@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web;
 
+use App\Enums\AnswerFormat;
 use App\Models\BacklogEntry;
+use App\Models\Gateway;
 use App\Support\Duration;
 use Carbon\CarbonImmutable;
 use Inertia\Inertia;
@@ -34,6 +36,7 @@ class ShowBacklogEntryController
         // Explicit, because `gateway_id` is nullOnDelete and the relation really
         // can be null — whatever the static analyser infers from the belongsTo.
         $gateway = $entry->gateway;
+        $answer = data_get($entry->output, '0.content.0.text');
 
         return [
             'id' => $entry->id,
@@ -42,9 +45,11 @@ class ShowBacklogEntryController
                 'tone' => $entry->status->tone(),
             ],
             'facts' => [
-                ['label' => 'Model', 'value' => $entry->model ?? '—'],
+                ['label' => 'Model', 'value' => $entry->model ?? '—', 'exact' => $entry->model],
                 ['label' => 'Gateway', 'value' => $gateway === null ? '—' : $gateway->name],
-                ['label' => 'Upstream', 'value' => $gateway === null ? '—' : $gateway->endpoint()],
+                // Long enough to be truncated in its tile, so it carries the
+                // whole URL as the tooltip the page reads `exact` for.
+                ['label' => 'Upstream', 'value' => $gateway === null ? '—' : $gateway->endpoint(), 'exact' => $gateway?->endpoint()],
                 ['label' => 'Attempts', 'value' => $entry->attempts.' / '.$entry->max_attempts],
                 ['label' => 'Total tokens', 'value' => $entry->usage['total_tokens'] ?? '—'],
                 ['label' => 'Waited', 'value' => Duration::human($entry->waitedSeconds()), 'exact' => Duration::exact($entry->waitedSeconds())],
@@ -57,10 +62,9 @@ class ShowBacklogEntryController
                 self::moment('Finished', $entry->finished_at),
                 self::moment('Updated', $entry->updated_at),
             ],
-            'answer' => data_get($entry->output, '0.content.0.text'),
-            'protocolNote' => $gateway !== null && ! $gateway->protocol->isPassthrough()
-                ? 'Sent as '.$gateway->protocol->label().': the driver rewrites this body on the way out.'
-                : null,
+            'answer' => $answer,
+            'answerFormat' => AnswerFormat::of(is_string($answer) ? $answer : null)->value,
+            'protocolNote' => self::protocolNote($gateway),
             'request' => $entry->request,
             'usage' => $entry->usage,
             'headerNames' => $entry->headerNames(),
@@ -90,6 +94,27 @@ class ShowBacklogEntryController
             'answer' => route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']),
             'error' => route('backlog.entry.download', ['id' => $entry->id, 'part' => 'error']),
         ];
+    }
+
+    /**
+     * Warn that the request shown is not the request that went on the wire.
+     *
+     * The page renders what was stored, which is what the caller sent. A
+     * translating gateway rewrites it on the way out, so without this an
+     * operator comparing the pane against their upstream's logs would be
+     * reading two different bodies and looking for the bug in the wrong one.
+     *
+     * Nothing is said for a passthrough gateway, or for one force deleted out
+     * from under its entries — in both cases there is no translation to warn
+     * about, which is a different thing from an empty warning.
+     */
+    private static function protocolNote(?Gateway $gateway): ?string
+    {
+        if ($gateway === null || $gateway->protocol->isPassthrough()) {
+            return null;
+        }
+
+        return 'Sent as '.$gateway->protocol->label().': the driver rewrites this body on the way out.';
     }
 
     /** @return array{label: string, exact: string|null, human: string} */

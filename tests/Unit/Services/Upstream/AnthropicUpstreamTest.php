@@ -165,3 +165,76 @@ it('still totals when only one of the two counts is reported', function () {
 
     expect($usage['total_tokens'])->toBe(7);
 });
+
+it('lists models from the models endpoint with the same headers a message would get', function () {
+    Http::fake(['*' => Http::response(['data' => []])]);
+
+    (new AnthropicUpstream)->models(anthropicGateway(), ['authorization' => 'Bearer sk-caller']);
+
+    Http::assertSent(fn (Request $request) => $request->method() === 'GET'
+        && $request->url() === 'https://anthropic.test/v1/models'
+        && $request->hasHeader('x-api-key', 'sk-caller')
+        && $request->header('Authorization') === []);
+});
+
+it('normalises a models list into the OpenAI shape', function () {
+    $list = (new AnthropicUpstream)->normaliseModels([
+        'data' => [
+            ['type' => 'model', 'id' => 'claude-sonnet-4-5', 'display_name' => 'Claude Sonnet 4.5', 'created_at' => '2025-09-29T00:00:00Z'],
+        ],
+    ]);
+
+    expect($list)->toBe([
+        'object' => 'list',
+        'data' => [[
+            'id' => 'claude-sonnet-4-5',
+            'object' => 'model',
+            'created' => strtotime('2025-09-29T00:00:00Z'),
+            'owned_by' => 'anthropic',
+        ]],
+    ]);
+});
+
+it('drops a model entry with no id rather than listing one nothing can address', function () {
+    $list = (new AnthropicUpstream)->normaliseModels(['data' => [['type' => 'model']]]);
+
+    expect($list['data'])->toBe([]);
+});
+
+/*
+ | Anthropic has no embeddings API. The point of this test is only that the
+ | driver forwards the call rather than refusing it itself — Anthropic's own
+ | 404 is what a caller actually sees.
+ */
+it('forwards an embeddings request to the same path an OpenAI-compatible upstream would use', function () {
+    Http::fake(['*' => Http::response(['data' => []])]);
+
+    (new AnthropicUpstream)->embeddings(anthropicGateway(), ['model' => 'm', 'input' => 'hi'], [
+        'authorization' => 'Bearer sk-caller',
+    ]);
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://anthropic.test/v1/embeddings'
+        && $request->hasHeader('x-api-key', 'sk-caller')
+        && $request['input'] === 'hi');
+});
+
+it('hands an embeddings answer back untouched', function () {
+    $list = ['object' => 'list', 'data' => []];
+
+    expect((new AnthropicUpstream)->normaliseEmbeddings($list))->toBe($list);
+});
+
+it('forwards a moderations request the same way', function () {
+    Http::fake(['*' => Http::response(['results' => []])]);
+
+    (new AnthropicUpstream)->moderations(anthropicGateway(), ['input' => 'hi'], ['authorization' => 'sk-caller']);
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://anthropic.test/v1/moderations'
+        && $request->hasHeader('x-api-key', 'sk-caller'));
+});
+
+it('hands a moderation answer back untouched', function () {
+    $result = ['results' => [['flagged' => false]]];
+
+    expect((new AnthropicUpstream)->normaliseModerations($result))->toBe($result);
+});

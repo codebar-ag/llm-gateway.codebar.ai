@@ -149,3 +149,103 @@ it('reports a total of null when the answer carries no counts at all', function 
 it('still totals when only one of the two counts is reported', function () {
     expect((new OllamaUpstream)->normalise(['eval_count' => 5])['usage']['total_tokens'])->toBe(5);
 });
+
+it('lists models from the native tags endpoint', function () {
+    Http::fake(['http://ollama.test:11434/api/tags' => Http::response(['models' => []])]);
+
+    (new OllamaUpstream)->models(
+        Gateway::factory()->ollama()->make(['base_url' => 'http://ollama.test:11434']),
+        ['authorization' => 'Bearer sk-caller'],
+    );
+
+    Http::assertSent(fn (Request $request) => $request->method() === 'GET'
+        && $request->url() === 'http://ollama.test:11434/api/tags'
+        && $request->hasHeader('Authorization', 'Bearer sk-caller'));
+});
+
+it('normalises a tags list into the OpenAI shape', function () {
+    $list = (new OllamaUpstream)->normaliseModels([
+        'models' => [
+            ['name' => 'llama3.2:3b', 'model' => 'llama3.2:3b', 'modified_at' => '2026-07-29T05:00:00Z'],
+        ],
+    ]);
+
+    expect($list)->toBe([
+        'object' => 'list',
+        'data' => [[
+            'id' => 'llama3.2:3b',
+            'object' => 'model',
+            'created' => strtotime('2026-07-29T05:00:00Z'),
+            'owned_by' => 'ollama',
+        ]],
+    ]);
+});
+
+it('falls back to the model digest name when a tag has no name', function () {
+    $list = (new OllamaUpstream)->normaliseModels(['models' => [['model' => 'llama3.2:3b']]]);
+
+    expect($list['data'][0]['id'])->toBe('llama3.2:3b');
+});
+
+it('posts to the native embed endpoint with the openai-shaped fields', function () {
+    Http::fake(['http://ollama.test:11434/api/embed' => Http::response(['embeddings' => []])]);
+
+    (new OllamaUpstream)->embeddings(
+        Gateway::factory()->ollama()->make(['base_url' => 'http://ollama.test:11434']),
+        ['model' => 'nomic-embed-text', 'input' => ['hi', 'there']],
+        ['authorization' => 'Bearer sk-caller'],
+    );
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'http://ollama.test:11434/api/embed'
+        && $request->hasHeader('Authorization', 'Bearer sk-caller')
+        && $request['model'] === 'nomic-embed-text'
+        && $request['input'] === ['hi', 'there']);
+});
+
+it('normalises an embed answer into the OpenAI embeddings shape', function () {
+    $list = (new OllamaUpstream)->normaliseEmbeddings([
+        'model' => 'nomic-embed-text',
+        'embeddings' => [[0.1, 0.2], [0.3, 0.4]],
+        'prompt_eval_count' => 6,
+    ]);
+
+    expect($list)->toBe([
+        'object' => 'list',
+        'data' => [
+            ['object' => 'embedding', 'embedding' => [0.1, 0.2], 'index' => 0],
+            ['object' => 'embedding', 'embedding' => [0.3, 0.4], 'index' => 1],
+        ],
+        'model' => 'nomic-embed-text',
+        'usage' => ['prompt_tokens' => 6, 'total_tokens' => 6],
+    ]);
+});
+
+it('reports no usage when ollama did not say', function () {
+    $usage = (new OllamaUpstream)->normaliseEmbeddings(['embeddings' => []])['usage'];
+
+    expect($usage)->toBe(['prompt_tokens' => null, 'total_tokens' => null]);
+});
+
+/*
+ | Ollama has no moderation model of its own. The point of this test is only
+ | that the driver forwards the call rather than refusing it itself —
+ | Ollama's own 404 is what a caller actually sees.
+ */
+it('forwards a moderations request to the openai-shaped path', function () {
+    Http::fake(['*' => Http::response(['results' => []])]);
+
+    (new OllamaUpstream)->moderations(
+        Gateway::factory()->ollama()->make(['base_url' => 'http://ollama.test:11434']),
+        ['input' => 'hi'],
+        ['authorization' => 'Bearer sk-caller'],
+    );
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'http://ollama.test:11434/v1/moderations'
+        && $request->hasHeader('Authorization', 'Bearer sk-caller'));
+});
+
+it('hands a moderation answer back untouched', function () {
+    $result = ['results' => [['flagged' => false]]];
+
+    expect((new OllamaUpstream)->normaliseModerations($result))->toBe($result);
+});

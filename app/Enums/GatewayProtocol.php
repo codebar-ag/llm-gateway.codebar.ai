@@ -61,4 +61,41 @@ enum GatewayProtocol: string
     {
         return $this === self::OpenAi;
     }
+
+    /** Where a gateway's model list is read from. */
+    public function modelsPath(): string
+    {
+        return match ($this) {
+            self::OpenAi, self::Anthropic => '/v1/models',
+            self::Ollama => '/api/tags',
+        };
+    }
+
+    /**
+     * Where embeddings are created.
+     *
+     * Anthropic has no embeddings API of its own — the path is still named so
+     * the driver has somewhere to send the request, and the upstream's own
+     * 404 is what tells a caller that.
+     */
+    public function embeddingsPath(): string
+    {
+        return match ($this) {
+            self::OpenAi, self::Anthropic => '/v1/embeddings',
+            self::Ollama => '/api/embed',
+        };
+    }
+
+    /**
+     * Where moderations are run.
+     *
+     * Only OpenAI-compatible upstreams have ever implemented this endpoint;
+     * Anthropic and Ollama are pointed at the same path an OpenAI-compatible
+     * one would use, and answer with their own 404 rather than a guess this
+     * app would have to invent.
+     */
+    public function moderationsPath(): string
+    {
+        return '/v1/moderations';
+    }
 }

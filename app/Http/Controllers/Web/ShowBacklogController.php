@@ -9,7 +9,6 @@ use App\Models\ApiKeyLabel;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
 use App\Support\BacklogFilters;
-use App\Support\Duration;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -53,16 +52,23 @@ class ShowBacklogController
                 'areEmpty' => $filters->areEmpty(),
             ],
             'statuses' => self::statusTiles($request, $filters, $counts),
-            'models' => BacklogEntry::distinctModels()
-                ->map(fn (string $model): array => ['value' => $model, 'label' => $model])
-                ->values()
-                ->all(),
-            'gateways' => Gateway::query()
-                ->orderBy('name')
-                ->get()
-                ->map(fn (Gateway $gateway): array => ['value' => $gateway->id, 'label' => $gateway->name])
-                ->all(),
-            'callers' => self::callerOptions(),
+
+            /*
+             | Lazily resolved, all three: the page reloads itself every fifteen
+             | seconds and asks only for the listing and its counters, and
+             | Inertia drops a prop the request did not name *before* resolving
+             | it — but only when the prop is a closure. Left as plain values
+             | these ran a DISTINCT scan, a full gateway read and a GROUP BY
+             | over the whole backlog on every refresh, to fill three dropdowns
+             | that only change when a model, gateway or caller is seen for the
+             | very first time. Not cached: a full page load must still show
+             | that first sighting, and a TTL is a staleness window bought for
+             | work Inertia is already skipping.
+             */
+            'models' => fn (): array => self::modelOptions(),
+            'gateways' => fn (): array => self::gatewayOptions(),
+            'callers' => fn (): array => self::callerOptions($labels),
+
             'entries' => collect($entries->items())
                 ->map(fn (BacklogEntry $entry): array => self::row($entry, $labels))
                 ->all(),
@@ -76,11 +82,40 @@ class ShowBacklogController
                 'workers' => Config::integer('gateway.backlog.workers'),
                 'endpoint' => $defaultGateway?->endpoint(),
             ],
+            // `filters`, `pagination` and `urls` stay plain: they are reads of
+            // values this method already holds, so wrapping them would buy a
+            // closure allocation and nothing else.
             'urls' => [
                 'backlog' => route('backlog'),
-                'callers' => route('callers'),
             ],
         ]);
+    }
+
+    /**
+     * Every model the backlog has seen, for the filter.
+     *
+     * @return array<int, array{value: string, label: string}>
+     */
+    private static function modelOptions(): array
+    {
+        return BacklogEntry::distinctModels()
+            ->map(fn (string $model): array => ['value' => $model, 'label' => $model])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Every gateway, for the filter.
+     *
+     * @return array<int, array{value: string, label: string}>
+     */
+    private static function gatewayOptions(): array
+    {
+        return Gateway::query()
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Gateway $gateway): array => ['value' => $gateway->id, 'label' => $gateway->name])
+            ->all();
     }
 
     /**
@@ -102,11 +137,10 @@ class ShowBacklogController
                 'label' => $entry->status->label(),
                 'tone' => $entry->status->tone(),
             ],
-            'attempts' => $entry->attempts.'/'.$entry->max_attempts,
-            'waited' => Duration::human($entry->waitedSeconds()),
-            'waitedExact' => Duration::exact($entry->waitedSeconds()),
-            'duration' => Duration::human($entry->durationSeconds()),
-            'durationExact' => Duration::exact($entry->durationSeconds()),
+            // Attempts, waited and duration are deliberately absent: they are
+            // per-entry detail, and carrying them here widened every row on a
+            // listing that reloads itself every fifteen seconds. The entry page
+            // has all three.
             'created' => [
                 'short' => $entry->created_at->diffForHumans(short: true),
                 'exact' => $entry->created_at->toDateTimeString(),
@@ -152,12 +186,15 @@ class ShowBacklogController
      * recently they were active, so the list stays usable once it is mostly
      * unnamed hashes.
      *
+     * The labels are passed in rather than looked up: the listing rows need the
+     * same map, and fetching it here as well ran `api_key_labels` twice per
+     * request for one identical answer.
+     *
+     * @param  Collection<string, string>  $labels
      * @return array<int, array{value: string, label: string}>
      */
-    private static function callerOptions(): array
+    private static function callerOptions(Collection $labels): array
     {
-        $labels = self::labels();
-
         $callers = BacklogEntry::callerActivity()
             ->sortByDesc(fn (array $caller): string => $caller['last_seen']->toDateTimeString())
             ->map(fn (array $caller): array => self::caller($caller['api_key_hash'], $labels));
@@ -198,8 +235,9 @@ class ShowBacklogController
     }
 
     /**
-     * Caller names by hash. `pluck()` widens to `mixed`, and both callers of
-     * this need the narrow type to say what they mean.
+     * Caller names by hash, fetched once and handed to everything that needs
+     * it. `pluck()` widens to `mixed`, and the narrow type is what lets the
+     * listing rows and the caller filter share the one map.
      *
      * @return Collection<string, string>
      */

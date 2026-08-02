@@ -42,15 +42,57 @@ class QueueEstimate
          | what makes this the wait until its own answer rather than until it
          | merely starts.
          */
-        $batches = (int) ceil(($ahead + BacklogEntry::runningCount() + 1) / $workers);
+        $batches = (int) ceil(($ahead + $this->runningCount() + 1) / $workers);
         $seconds = $batches * $this->secondsPerEntry($entry->model);
 
         return new QueuePlace(
             position: $ahead + 1,
-            depth: BacklogEntry::queuedDepth(),
+            depth: $this->queuedDepth(),
             workers: $workers,
             estimatedSeconds: $seconds,
             estimatedCompletionAt: now()->addSeconds($seconds)->getTimestamp(),
+        );
+    }
+
+    /**
+     * How many entries a worker is busy with, and so cannot start another for.
+     *
+     * The same answer for everyone. `GET /v1/responses/{id}` is documented as
+     * something to poll in a loop and is deliberately unthrottled, so a hundred
+     * callers waiting on the same backlog were each paying for their own COUNT
+     * of a number none of them can influence and all of them share. Cached for
+     * the same window the measurement uses, for the same reason: the running
+     * set does not turn over between two polls a second apart, and being at
+     * most one ttl behind moves the estimate by a batch at worst.
+     *
+     * Kept out of the `backlog:estimate:` namespace on purpose — that prefix is
+     * completed by a caller-supplied model name, and a model called `running`
+     * would otherwise collide with this key and be quoted a wait in entries.
+     */
+    private function runningCount(): int
+    {
+        return Cache::remember(
+            'backlog:running-count',
+            Config::integer('gateway.backlog.estimate.ttl'),
+            fn (): int => BacklogEntry::runningCount(),
+        );
+    }
+
+    /**
+     * How many entries are waiting, across every caller and gateway.
+     *
+     * Global like the running count, and cached with it. Depth is context
+     * rather than the caller's own standing — it says how busy the backlog is,
+     * not where they are in it — so a number a few seconds old still tells them
+     * what they read it for. The position beside it is what has to be exact,
+     * and that one is never cached.
+     */
+    private function queuedDepth(): int
+    {
+        return Cache::remember(
+            'backlog:queued-depth',
+            Config::integer('gateway.backlog.estimate.ttl'),
+            fn (): int => BacklogEntry::queuedDepth(),
         );
     }
 
@@ -61,6 +103,12 @@ class QueueEstimate
      * over the last few entries does not move between two polls a second
      * apart. The position it is multiplied by is never cached: that one does
      * move, and a stale place in line is worse than none.
+     *
+     * That split is what decides all three caches. Everything a poll asks that
+     * is the same for every caller — this measurement, the running count, the
+     * depth — is counted once per ttl and shared; only `queuedAhead()`, the one
+     * number that is about this entry and changes as the line moves, is read
+     * live on every poll.
      */
     private function secondsPerEntry(?string $model): int
     {

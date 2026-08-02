@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web;
 
+use App\Enums\AnswerFormat;
 use App\Models\BacklogEntry;
 use Illuminate\Support\Facades\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -34,12 +35,18 @@ class DownloadEntryPartController
         // "the answer was empty" rather than "there is no answer yet".
         abort_if($content === null, 404);
 
+        // Every part but the answer is this application's own JSON. The answer
+        // is the model's, so it gets whichever format it actually turned out to
+        // be. The bytes go out untouched either way: re-encoding a JSON answer
+        // to pretty-print it would quietly rewrite `1284.50` as `1284.5`.
+        $format = $part === 'answer' ? AnswerFormat::of($content) : AnswerFormat::Json;
+
         return Response::streamDownload(
             function () use ($content): void {
                 echo $content;
             },
-            self::filename($entry->id, $part),
-            ['Content-Type' => self::contentType($part)],
+            self::filename($entry->id, $part, $format),
+            ['Content-Type' => $format->contentType()],
             'attachment',
         );
     }
@@ -60,16 +67,9 @@ class DownloadEntryPartController
      * but it reaches a filename, so it goes through basename() first, whatever
      * shape the route constrains it to today.
      */
-    private static function filename(string $id, string $part): string
+    private static function filename(string $id, string $part, AnswerFormat $format): string
     {
-        $extension = $part === 'answer' ? 'md' : 'json';
-
-        return basename($id).'_'.$part.'.'.$extension;
-    }
-
-    private static function contentType(string $part): string
-    {
-        return $part === 'answer' ? 'text/markdown; charset=utf-8' : 'application/json';
+        return basename($id).'_'.$part.'.'.$format->extension();
     }
 
     /** @param  array<array-key, mixed>|null  $value */

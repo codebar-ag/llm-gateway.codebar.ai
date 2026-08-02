@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\BacklogEntry;
+use App\Models\Gateway;
 use Inertia\Testing\AssertableInertia;
 
 it('renders the details page for an operator holding the dashboard token', function () {
@@ -71,6 +72,29 @@ it('shows timings and attempt counters', function () {
         ->and(array_column($props['entry']['facts'], 'label'))->toContain('Attempts');
 });
 
+it('tells the page which format the answer turned out to be', function (string $answer, string $expected) {
+    $entry = BacklogEntry::factory()->completed($answer)->create();
+
+    $props = inertiaProps($this->get(route('backlog.entry', $entry->id))->assertOk());
+
+    expect($props['entry']['answerFormat'])->toBe($expected);
+})->with([
+    'structured' => ['{"total":1284.50}', 'json'],
+    'prose' => ['The answer is 42.', 'markdown'],
+]);
+
+it('carries the full upstream url as the tooltip for its truncated tile', function () {
+    $gateway = Gateway::factory()->create(['base_url' => 'http://10.0.1.14:11434']);
+    $entry = BacklogEntry::factory()->create(['gateway_id' => $gateway->id]);
+
+    $props = inertiaProps($this->get(route('backlog.entry', $entry->id))->assertOk());
+
+    $facts = collect($props['entry']['facts'])->keyBy('label');
+
+    expect($facts['Upstream']['exact'])->toBe($gateway->endpoint())
+        ->and($facts['Upstream']['exact'])->toBe($facts['Upstream']['value']);
+});
+
 it('shows the api key hash and the forwarded header names', function () {
     $entry = BacklogEntry::factory()->create();
 
@@ -131,4 +155,45 @@ it('renders a queued entry that has no result yet', function () {
             ->where('entry.id', $entry->id)
             ->where('entry.answer', null)
             ->where('entry.error', null));
+});
+
+/*
+ | The page shows the stored request, which for a translating gateway is not
+ | what went on the wire. `protocolNote` is the warning that says so, and both
+ | of its branches matter: saying nothing on a passthrough gateway is as much
+ | the point as saying something on the other two.
+ */
+
+it('warns that a translating gateway rewrites the body on the way out', function (string $state, string $label) {
+    $gateway = Gateway::factory()->{$state}()->create();
+    $entry = BacklogEntry::factory()->create(['gateway_id' => $gateway->id]);
+
+    $this->get(route('backlog.entry', $entry->id))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where(
+            'entry.protocolNote',
+            "Sent as {$label}: the driver rewrites this body on the way out.",
+        ));
+})->with([
+    ['anthropic', 'Anthropic'],
+    ['ollama', 'Ollama'],
+]);
+
+it('says nothing about the protocol when the gateway is a passthrough', function () {
+    $entry = BacklogEntry::factory()->create();
+
+    $this->get(route('backlog.entry', $entry->id))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('entry.protocolNote', null));
+});
+
+it('says nothing about the protocol when the gateway is gone entirely', function () {
+    $entry = BacklogEntry::factory()->create();
+    $entry->gateway->forceDelete();
+
+    // `gateway_id` is nullOnDelete, so a force-deleted gateway leaves the entry
+    // with no protocol to report on rather than with a dangling one.
+    $this->get(route('backlog.entry', $entry->fresh()->id))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('entry.protocolNote', null));
 });

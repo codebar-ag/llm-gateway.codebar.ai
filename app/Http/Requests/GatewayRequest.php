@@ -27,6 +27,14 @@ class GatewayRequest extends FormRequest
     public function rules(): array
     {
         return [
+            /*
+             | Spans retired gateways too, matching the unique index on the
+             | column. Deliberate rather than an oversight: a retired gateway
+             | keeps appearing by name against every entry it answered, so
+             | letting a new one take that name would make the backlog's
+             | attribution ambiguous. `messages()` says so, because the row
+             | holding the name is one the operator can no longer see.
+             */
             'name' => ['required', 'string', 'max:255', Rule::unique('gateways', 'name')->ignore($this->gateway())],
             'protocol' => ['required', Rule::enum(GatewayProtocol::class)],
             'base_url' => ['required', 'string', 'max:2048', 'url:http,https'],
@@ -59,6 +67,14 @@ class GatewayRequest extends FormRequest
             'timeout.max' => 'A gateway cannot be slower than GATEWAY_MAX_TIMEOUT ('
                 .Config::integer('gateway.upstream.max_timeout').'s). Raise the ceiling first.',
             'path.starts_with' => 'The path must start with a slash, for example /v1/chat/completions.',
+            /*
+             | Said in full because the row holding the name may be one the
+             | operator cannot see: retiring a gateway is a soft delete, so a
+             | retired name still collides. Laravel's bare "has already been
+             | taken" sends them looking through a list it is not in.
+             */
+            'name.unique' => 'Another gateway already has that name. Retired gateways keep theirs too, '
+                .'so the entries they answered stay attributable — pick a different one.',
         ];
     }
 

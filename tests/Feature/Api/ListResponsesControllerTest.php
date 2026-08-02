@@ -112,3 +112,33 @@ it('reports no queue place per row, whatever the list costs', function () {
     // per row would have made this grow with the page.
     expect($queries)->toBe($forTwo);
 });
+
+/*
+ | "Ignores" was the promise; filtering on the array's first element was what
+ | actually happened, and asserting only the 200 could not tell the two apart.
+ */
+
+it('really ignores a status filter sent as an array, rather than filtering on its first value', function () {
+    BacklogEntry::factory()->create();
+    BacklogEntry::factory()->completed()->create();
+
+    $response = $this->getJson('/v1/responses?status[]=queued', gatewayAuth())->assertOk();
+
+    // Both entries, not just the queued one the array happened to name.
+    expect($response->json('data'))->toHaveCount(2);
+});
+
+it('really ignores a model filter sent as an array too', function () {
+    BacklogEntry::factory()->create(['model' => 'llama3.2:3b']);
+    BacklogEntry::factory()->create(['model' => 'qwen3-vl:32b']);
+
+    $response = $this->getJson('/v1/responses?model[]=llama3.2:3b', gatewayAuth())->assertOk();
+
+    expect($response->json('data'))->toHaveCount(2);
+});
+
+it('still refuses a status it has never heard of', function () {
+    $this->getJson('/v1/responses?status=bogus', gatewayAuth())
+        ->assertStatus(422)
+        ->assertJsonPath('error.type', 'invalid_request');
+});

@@ -72,6 +72,30 @@ it('downloads the answer as markdown', function () {
     expect($response->streamedContent())->toBe("# Heading\n\nthe answer is 42");
 });
 
+it('downloads a structured answer as json', function () {
+    $entry = BacklogEntry::factory()->completed('{"rechnungsnummer":"2026-4471","total":1284.50}')->create();
+
+    $response = asOperator()
+        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->assertOk()
+        ->assertDownload($entry->id.'_answer.json')
+        ->assertHeader('Content-Type', 'application/json');
+
+    // Byte for byte what the model wrote: re-encoding to pretty-print it would
+    // round 1284.50 to 1284.5 in a file someone may diff against the response.
+    expect($response->streamedContent())->toBe('{"rechnungsnummer":"2026-4471","total":1284.50}');
+});
+
+it('downloads a prose answer that merely mentions braces as markdown', function () {
+    $entry = BacklogEntry::factory()->completed('{ this is not json')->create();
+
+    asOperator()
+        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->assertOk()
+        ->assertDownload($entry->id.'_answer.md')
+        ->assertHeader('Content-Type', 'text/markdown; charset=utf-8');
+});
+
 it('downloads the error as json', function () {
     $entry = BacklogEntry::factory()->failed('upstream unavailable')->create();
 

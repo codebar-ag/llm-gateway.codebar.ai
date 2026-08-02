@@ -225,7 +225,7 @@ it('prefixes every entry id in the table with a literal hash', function () {
         ->assertSeeIn('tbody tr td:nth-child(1)', '#'.$entry->id);
 });
 
-it('shows the exact waited, duration, and created timestamps as row tooltips', function () {
+it('shows the exact created timestamp as a row tooltip', function () {
     $entry = BacklogEntry::factory()->create([
         'id' => 'resp_tooltipcheck',
         'status' => BacklogStatus::Completed,
@@ -234,16 +234,47 @@ it('shows the exact waited, duration, and created timestamps as row tooltips', f
         'finished_at' => now()->subSeconds(20),
     ]);
 
-    // waited = created -> started = 250s = "4m 10s"; duration = started -> finished = 130s = "2m 10s".
     $expectedCreatedExact = $entry->created_at->toDateTimeString();
 
     [$page] = signIn();
 
-    $page->assertAttribute('tbody tr td:nth-child(7) span', 'title', '250s')
-        ->assertSeeIn('tbody tr td:nth-child(7)', '4m 10s')
-        ->assertAttribute('tbody tr td:nth-child(8) span', 'title', '130s')
-        ->assertSeeIn('tbody tr td:nth-child(8)', '2m 10s')
-        ->assertAttribute('tbody tr td:nth-child(9) span', 'title', $expectedCreatedExact);
+    // Entry, status, gateway/model, caller, created.
+    $page->assertAttribute('tbody tr td:nth-child(5) span', 'title', $expectedCreatedExact);
+});
+
+it('pairs the gateway with its model in one column', function () {
+    $gateway = Gateway::factory()->create(['name' => 'Mac Ollama']);
+
+    BacklogEntry::factory()->create([
+        'id' => 'resp_pairedcell',
+        'gateway_id' => $gateway->id,
+        'model' => 'qwen3-vl:30b-a3b',
+    ]);
+
+    [$page] = signIn();
+
+    $page->assertSeeIn('tbody tr td:nth-child(3)', 'Mac Ollama')
+        ->assertSeeIn('tbody tr td:nth-child(3)', 'qwen3-vl:30b-a3b');
+});
+
+it('leaves attempts, waited and duration to the entry page', function () {
+    BacklogEntry::factory()->create([
+        'id' => 'resp_timingcheck',
+        'status' => BacklogStatus::Completed,
+        'created_at' => now()->subSeconds(400),
+        'started_at' => now()->subSeconds(150),
+        'finished_at' => now()->subSeconds(20),
+    ]);
+
+    [$page] = signIn();
+
+    // waited = 250s = "4m 10s", duration = 130s = "2m 10s". Both belong to the
+    // entry page now, so neither the headings nor the values appear out here.
+    $page->assertDontSee('Waited')
+        ->assertDontSee('Duration')
+        ->assertDontSee('Attempts')
+        ->assertDontSee('4m 10s')
+        ->assertDontSee('2m 10s');
 });
 
 it('warns about the oldest queued entry', function () {

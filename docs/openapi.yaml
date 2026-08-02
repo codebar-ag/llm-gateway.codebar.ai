@@ -4,9 +4,13 @@ info:
   title: LLM Gateway
   version: "1.0.0"
   description: |
-    An asynchronous front door for an LLM backend. Every call is **queued** and
-    answered later — nothing here proxies a request synchronously, and there is
-    no streaming.
+    An asynchronous front door for an LLM backend. A chat completion or a
+    Responses call is **queued** and answered later — nothing here streams,
+    and neither proxies synchronously. Four endpoints are the exception:
+    `GET /v1/models`, `GET /v1/models/{id}`, `POST /v1/embeddings` and
+    `POST /v1/moderations` don't fit the `background: true` shape a
+    completion does, so they answer straight from the upstream instead of
+    through the backlog — see the `Synchronous` tag below.
 
     ## Passthrough
 
@@ -49,6 +53,10 @@ info:
     `Retry-After`. **Reading is never throttled**; polling is the documented way
     to collect an answer.
 
+    `POST /v1/embeddings` and `POST /v1/moderations` share this same budget,
+    even though neither is queued: both still cost the upstream real compute,
+    unlike `GET /v1/models`, which is a plain read and stays unthrottled.
+
   license:
     name: MIT
 
@@ -76,9 +84,193 @@ tags:
     description: Creating entries. Rate limited.
   - name: Collect
     description: Reading, cancelling and deleting entries. Never throttled.
+  - name: Synchronous
+    description: |
+      Answered straight from the upstream, not through the backlog. Models is
+      an unthrottled read; embeddings and moderations share the queue's rate
+      limit because they still cost the upstream real compute.
   - name: Health
 
 paths:
+
+  /v1/models:
+    get:
+      tags: [Synchronous]
+      summary: List a gateway's models
+      description: |
+        Answered synchronously, not queued: listing models never touches a
+        backend's limited concurrent generation slots, so there is nothing to
+        gain by making a caller poll for it. Proxies straight to the resolved
+        gateway's upstream and normalises the answer into an OpenAI models
+        list, whatever the gateway's own protocol — Anthropic's `/v1/models`
+        and Ollama's native `/api/tags` are both translated the same way a
+        chat completion is.
+      responses:
+        "200":
+          description: The gateway's models, OpenAI-list shaped.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object:
+                    type: string
+                    enum: [list]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Model"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/GatewayNotFound"
+        "502":
+          $ref: "#/components/responses/UpstreamUnreachable"
+        "default":
+          $ref: "#/components/responses/UpstreamError"
+
+  /v1/models/{id}:
+    get:
+      tags: [Synchronous]
+      summary: Retrieve one model
+      description: |
+        Reads the same list `GET /v1/models` does and returns the entry whose
+        `id` matches — there is no per-protocol "get one model" call, since
+        Ollama has nothing that answers by name the way OpenAI and Anthropic
+        do. `id` may contain a slash, for OpenRouter-style names such as
+        `anthropic/claude-3.5-sonnet`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The matching model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: |
+            The gateway itself is unknown (`gateway_not_found`), or it is
+            known but does not list this model (`model_not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/UpstreamUnreachable"
+        "default":
+          $ref: "#/components/responses/UpstreamError"
+
+  /v1/embeddings:
+    post:
+      tags: [Synchronous]
+      summary: Create embeddings
+      description: |
+        Answered synchronously — no OpenAI client expects to poll for an
+        embedding. Unlike the two model endpoints this still costs the
+        upstream real compute, so it shares `throttle:queue`
+        (`BACKLOG_RATE_LIMIT`) rather than going unthrottled like a plain
+        read. Anthropic has no embeddings API; a gateway pointed at one
+        answers with Anthropic's own `404`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Any OpenAI-compatible embeddings body.
+              properties:
+                model:
+                  type: string
+                input:
+                  description: A string, or an array of strings.
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+              additionalProperties: true
+      responses:
+        "200":
+          description: The embeddings, OpenAI-list shaped.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object:
+                    type: string
+                    enum: [list]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Embedding"
+                  model:
+                    type: string
+                  usage:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/GatewayNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamUnreachable"
+        "default":
+          $ref: "#/components/responses/UpstreamError"
+
+  /v1/moderations:
+    post:
+      tags: [Synchronous]
+      summary: Run a moderation check
+      description: |
+        Answered synchronously, rate limited the same way `POST /v1/embeddings`
+        is. Only OpenAI-compatible upstreams have ever implemented this
+        endpoint — a gateway on Anthropic or Ollama forwards the request
+        anyway and passes that upstream's own `404` straight back, rather
+        than this app guessing at support it cannot verify.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Any OpenAI-compatible moderations body.
+              properties:
+                input:
+                  description: A string, or an array of strings.
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+                model:
+                  type: string
+              additionalProperties: true
+      responses:
+        "200":
+          description: The upstream's moderation result, passed through unchanged.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/GatewayNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamUnreachable"
+        "default":
+          $ref: "#/components/responses/UpstreamError"
 
   /up:
     get:
@@ -445,6 +637,37 @@ components:
         queue:
           $ref: "#/components/schemas/Queue"
 
+    Model:
+      type: object
+      description: |
+        One upstream model, always normalised to this shape regardless of the
+        gateway's protocol.
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [model]
+        created:
+          type: integer
+          nullable: true
+          description: Unix timestamp. `null` when the upstream did not report one.
+        owned_by:
+          type: string
+
+    Embedding:
+      type: object
+      properties:
+        object:
+          type: string
+          enum: [embedding]
+        embedding:
+          type: array
+          items:
+            type: number
+        index:
+          type: integer
+
     Error:
       type: object
       properties:
@@ -456,8 +679,10 @@ components:
             type:
               type: string
               description: |
-                `async_only`, `gateway_not_found`, `invalid_request` or
-                `invalid_state`.
+                `async_only`, `gateway_not_found`, `invalid_request`,
+                `invalid_state`, `model_not_found`, `upstream_error` (the
+                upstream answered with an error of its own — `error.body`
+                carries it verbatim) or `upstream_unreachable`.
 
   responses:
 
@@ -495,6 +720,24 @@ components:
         Retry-After:
           schema:
             type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    UpstreamUnreachable:
+      description: The upstream could not be reached at all (`upstream_unreachable`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    UpstreamError:
+      description: |
+        Any status the upstream itself answered with is passed straight
+        through, body and all (`upstream_error`). Only reachable on a
+        synchronous endpoint — a queued request stores the same information
+        on the entry instead, see `Response.error`.
       content:
         application/json:
           schema:

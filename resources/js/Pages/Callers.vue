@@ -138,9 +138,17 @@ function forget(caller) {
                         >
                             Entries
                         </Button>
+                        <!--
+                            Labelled as well as captioned. "Name" and "Rename"
+                            are the same control in two states, so a screen
+                            reader hearing the row out gets the caller it acts
+                            on rather than a bare verb — and a test can address
+                            it by attribute instead of by matching its text.
+                        -->
                         <Button
                             variant="ghost"
                             size="sm"
+                            :aria-label="row.name ? 'Rename caller' : 'Name caller'"
                             @click="edit(row)"
                         >
                             {{ row.name ? 'Rename' : 'Name' }}

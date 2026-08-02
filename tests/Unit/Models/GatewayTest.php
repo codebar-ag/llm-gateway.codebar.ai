@@ -33,6 +33,43 @@ it('prefers a path override over the protocol default', function () {
         ->toBe('http://llm.test/proxy/chat');
 });
 
+it('builds its models endpoint from the base url and the protocol', function () {
+    expect(Gateway::factory()->make(['base_url' => 'http://llm.test/'])->modelsEndpoint())
+        ->toBe('http://llm.test/v1/models')
+        ->and(Gateway::factory()->anthropic()->make(['base_url' => 'https://api.test'])->modelsEndpoint())
+        ->toBe('https://api.test/v1/models')
+        ->and(Gateway::factory()->ollama()->make(['base_url' => 'http://box:11434'])->modelsEndpoint())
+        ->toBe('http://box:11434/api/tags');
+});
+
+/*
+ | `path` overrides where a completion lands, e.g. an Azure deployment path —
+ | it says nothing about where the rest of the upstream's routes live, so the
+ | models endpoint ignores it rather than inheriting a completions-only prefix.
+ */
+it('ignores a completions path override when building the models endpoint', function () {
+    expect(Gateway::factory()->make(['base_url' => 'http://llm.test', 'path' => '/openai/deployments/gpt/chat/completions'])->modelsEndpoint())
+        ->toBe('http://llm.test/v1/models');
+});
+
+it('builds its embeddings endpoint from the base url and the protocol', function () {
+    expect(Gateway::factory()->make(['base_url' => 'http://llm.test/'])->embeddingsEndpoint())
+        ->toBe('http://llm.test/v1/embeddings')
+        ->and(Gateway::factory()->anthropic()->make(['base_url' => 'https://api.test'])->embeddingsEndpoint())
+        ->toBe('https://api.test/v1/embeddings')
+        ->and(Gateway::factory()->ollama()->make(['base_url' => 'http://box:11434'])->embeddingsEndpoint())
+        ->toBe('http://box:11434/api/embed');
+});
+
+it('builds its moderations endpoint the same way for every protocol', function () {
+    expect(Gateway::factory()->make(['base_url' => 'http://llm.test/'])->moderationsEndpoint())
+        ->toBe('http://llm.test/v1/moderations')
+        ->and(Gateway::factory()->anthropic()->make(['base_url' => 'https://api.test'])->moderationsEndpoint())
+        ->toBe('https://api.test/v1/moderations')
+        ->and(Gateway::factory()->ollama()->make(['base_url' => 'http://box:11434'])->moderationsEndpoint())
+        ->toBe('http://box:11434/v1/moderations');
+});
+
 it('tells a caller which base url addresses it', function () {
     config(['app.url' => 'https://llm.codebar.net/']);
 

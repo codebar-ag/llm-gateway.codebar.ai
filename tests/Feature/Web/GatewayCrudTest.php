@@ -6,6 +6,7 @@ use App\Enums\GatewayProtocol;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia;
 
 /** @return array<string, mixed> */
@@ -276,4 +277,103 @@ it('renders the edit form filled in with the gateway', function () {
             ->where('gateway.baseUrl', $gateway->base_url)
             ->where('gateway.callerBaseUrl', $gateway->callerBaseUrl())
             ->where('urls.submit', route('gateways.update', $gateway)));
+});
+
+/*
+ | The default gateway has to stay usable, not merely exist. Routing reads
+ | `Gateway::activeDefault()`, which wants both flags — so an inactive default
+ | takes the root API down exactly as a missing one would. Retiring the default
+ | was already refused; these cover the two ways the same thing used to happen
+ | quietly, through the edit form and through the promote button.
+ */
+
+it('refuses to deactivate the gateway holding the default', function () {
+    $gateway = Gateway::default();
+
+    $this->put(route('gateways.update', $gateway), gatewayAttributes([
+        'name' => $gateway->name,
+        'is_active' => '0',
+    ]))->assertSessionHasErrors('is_active');
+
+    expect($gateway->fresh()->is_active)->toBeTrue();
+});
+
+it('rolls the whole edit back when the deactivation is refused', function () {
+    $gateway = Gateway::default();
+
+    $this->put(route('gateways.update', $gateway), gatewayAttributes([
+        'name' => 'Renamed as well',
+        'is_active' => '0',
+    ]))->assertSessionHasErrors('is_active');
+
+    // The rename rode along in the same request; refusing one field must not
+    // leave the other applied.
+    expect($gateway->fresh()->name)->toBe($gateway->name);
+});
+
+it('still deactivates a gateway that is not the default', function () {
+    $gateway = Gateway::factory()->create(['is_active' => true]);
+
+    $this->put(route('gateways.update', $gateway), gatewayAttributes(['is_active' => '0']))
+        ->assertRedirect(route('gateways'));
+
+    expect($gateway->fresh()->is_active)->toBeFalse();
+});
+
+it('activates an inactive gateway as it is promoted from the index', function () {
+    $gateway = Gateway::factory()->create(['is_active' => false]);
+
+    $this->post(route('gateways.default', $gateway))->assertRedirect(route('gateways'));
+
+    expect($gateway->fresh()->is_default)->toBeTrue()
+        ->and($gateway->fresh()->is_active)->toBeTrue();
+});
+
+it('keeps routing working after an inactive gateway is promoted', function () {
+    Http::fake(['*' => Http::response(['choices' => [['message' => ['content' => 'ok']]]])]);
+
+    $gateway = Gateway::factory()->create(['is_active' => false, 'base_url' => 'http://promoted.test']);
+
+    $this->post(route('gateways.default', $gateway));
+
+    // The point of activating on promotion: a request with no gateway id has
+    // somewhere to go rather than the 503 nobody asked for.
+    $this->postJson('/v1/chat/completions', ['model' => 'x'], gatewayAuth())->assertStatus(202);
+});
+
+it('activates an inactive gateway promoted from the edit form', function () {
+    $gateway = Gateway::factory()->create(['is_active' => false]);
+
+    $this->put(route('gateways.update', $gateway), gatewayAttributes(['is_default' => '1']))
+        ->assertRedirect(route('gateways'));
+
+    expect($gateway->fresh()->is_default)->toBeTrue()
+        ->and($gateway->fresh()->is_active)->toBeTrue();
+});
+
+it('refuses an edit that promotes and deactivates in the same breath', function () {
+    $gateway = Gateway::factory()->create(['is_active' => true]);
+
+    $this->put(route('gateways.update', $gateway), gatewayAttributes([
+        'is_default' => '1',
+        'is_active' => '0',
+    ]))->assertSessionHasErrors('is_active');
+
+    expect($gateway->fresh()->is_default)->toBeFalse();
+});
+
+it('explains that a retired gateway is still holding a name', function () {
+    $gateway = Gateway::factory()->create(['name' => 'Ollama box']);
+    $gateway->delete();
+
+    /*
+     | Retiring is a soft delete and the unique index spans the retired rows, so
+     | the name really is taken — deliberately, since that gateway keeps being
+     | named against every entry it answered. The operator cannot see the row
+     | holding it, so the message has to say why rather than leaving them
+     | hunting through the list for a gateway that is not in it.
+     */
+    $this->post(route('gateways.store'), gatewayAttributes(['name' => 'Ollama box']))
+        ->assertSessionHasErrors(['name' => 'Another gateway already has that name. Retired gateways keep theirs too, '
+            .'so the entries they answered stay attributable — pick a different one.']);
 });

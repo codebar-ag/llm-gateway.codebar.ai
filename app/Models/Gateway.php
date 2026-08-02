@@ -102,6 +102,35 @@ class Gateway extends Model
             ->value();
     }
 
+    /**
+     * Full URL the driver lists models from.
+     *
+     * Unlike `endpoint()` this never applies `$path`: that field overrides
+     * where a *completion* lands (an Azure deployment path, say), not a
+     * prefix shared with every other route the upstream exposes.
+     */
+    public function modelsEndpoint(): string
+    {
+        return $this->urlFor($this->protocol->modelsPath());
+    }
+
+    /** Full URL the driver creates embeddings at. Ignores `$path`, same as `modelsEndpoint()`. */
+    public function embeddingsEndpoint(): string
+    {
+        return $this->urlFor($this->protocol->embeddingsPath());
+    }
+
+    /** Full URL the driver runs moderations against. Ignores `$path`, same as `modelsEndpoint()`. */
+    public function moderationsEndpoint(): string
+    {
+        return $this->urlFor($this->protocol->moderationsPath());
+    }
+
+    private function urlFor(string $path): string
+    {
+        return Str::of($this->base_url)->rtrim('/')->append($path)->value();
+    }
+
     /** What a caller puts in their SDK's base_url to address this gateway. */
     public function callerBaseUrl(): string
     {

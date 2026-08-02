@@ -1,6 +1,6 @@
 <script setup>
-import { Head, Link as InertiaLink, router } from '@inertiajs/vue3';
-import { onBeforeUnmount, onMounted, reactive } from 'vue';
+import { Head, Link as InertiaLink, router, usePoll } from '@inertiajs/vue3';
+import { reactive } from 'vue';
 import Dashboard from '../Layouts/Dashboard.vue';
 
 const props = defineProps({
@@ -17,15 +17,17 @@ const props = defineProps({
     urls: { type: Object, required: true },
 });
 
+/*
+ | Nine columns did not fit, so the listing keeps what someone scans for and
+ | leaves the rest to the entry page: status first, then the target as one
+ | column (gateway over model), then who asked and when. Attempts, waited and
+ | duration live on the entry itself.
+ */
 const columns = [
     { key: 'id', label: 'Entry' },
-    { key: 'model', label: 'Model' },
-    { key: 'gateway', label: 'Gateway' },
-    { key: 'caller', label: 'Caller' },
     { key: 'status', label: 'Status' },
-    { key: 'attempts', label: 'Attempts', align: 'right' },
-    { key: 'waited', label: 'Waited', align: 'right' },
-    { key: 'duration', label: 'Duration', align: 'right' },
+    { key: 'gateway', label: 'Gateway / model' },
+    { key: 'caller', label: 'Caller' },
     { key: 'created', label: 'Created', align: 'right' },
 ];
 
@@ -51,16 +53,20 @@ function search() {
 /*
  | Replaces the old <meta http-equiv="refresh">. A partial reload keeps scroll
  | position, filter focus and the typed query, and asks only for what changes.
+ |
+ | `usePoll` rather than a hand-rolled setInterval: it registers its own
+ | visibilitychange listener, so a backlog left open in a background tab drops
+ | to one request in ten instead of hitting the controller four times a minute
+ | forever, and it will not let a slow reload stack on top of the previous one.
+ | It wires its own mount/unmount, so there is no timer to clear here.
+ |
+ | `pagination` has to be in the list: prev/next are cursors taken from the
+ | result set they were rendered with, and leaving them behind while `entries`
+ | moves on points Next at a boundary that no longer exists.
  */
-let timer = null;
-
-onMounted(() => {
-    timer = setInterval(() => {
-        router.reload({ only: ['entries', 'statuses', 'total', 'oldestQueued', 'summary'] });
-    }, 15000);
+usePoll(15000, {
+    only: ['entries', 'statuses', 'total', 'oldestQueued', 'summary', 'pagination'],
 });
-
-onBeforeUnmount(() => clearInterval(timer));
 </script>
 
 <template>
@@ -199,11 +205,21 @@ onBeforeUnmount(() => clearInterval(timer));
                     <IdCell :id="row.id" />
                 </template>
 
+                <!-- `in progress` is two words and wrapped mid-badge at this
+                     column width, which read as a broken pill. -->
                 <template #cell-status="{ row }">
                     <StatusBadge
+                        class="whitespace-nowrap"
                         :variant="row.status.tone"
                         :label="row.status.label"
                     />
+                </template>
+
+                <template #cell-gateway="{ row }">
+                    <div class="leading-tight">
+                        <div>{{ row.gateway }}</div>
+                        <div class="text-xs text-dim">{{ row.model }}</div>
+                    </div>
                 </template>
 
                 <template #cell-caller="{ row }">
@@ -215,16 +231,8 @@ onBeforeUnmount(() => clearInterval(timer));
                     </span>
                 </template>
 
-                <!-- The rounded span with the measurement it came from, so a
+                <!-- The rounded span carries the measurement it came from, so a
                      "25m" is never the only number on the page. -->
-                <template #cell-waited="{ row }">
-                    <span :title="row.waitedExact ?? undefined">{{ row.waited }}</span>
-                </template>
-
-                <template #cell-duration="{ row }">
-                    <span :title="row.durationExact ?? undefined">{{ row.duration }}</span>
-                </template>
-
                 <template #cell-created="{ row }">
                     <span :title="row.created.exact">{{ row.created.short }}</span>
                 </template>
@@ -262,7 +270,10 @@ onBeforeUnmount(() => clearInterval(timer));
                             :on-navigate="(href) => router.visit(href, { preserveScroll: true })"
                         />
 
-                        <span>Auto-refreshes every 15&thinsp;s</span>
+                        <!-- "while visible" is not a hedge: a backgrounded tab
+                             is deliberately throttled, so the interval only
+                             holds for the tab someone is actually watching. -->
+                        <span>Auto-refreshes every 15&thinsp;s while visible</span>
                     </div>
                 </template>
             </DataTable>

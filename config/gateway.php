@@ -68,6 +68,24 @@ return [
 
     'api' => [
         'require_caller_key' => boolval(env('API_REQUIRE_CALLER_KEY', false)),
+
+        /*
+        | How long a `/v1/models` listing is reused, in seconds.
+        |
+        | Those two routes sit outside the queue rate limit on purpose — a
+        | model listing is a cheap, idempotent read that no client should have
+        | to poll for — which leaves them reachable through the tunnel, keyless
+        | by default, and one upstream request per caller request. The set of
+        | models a gateway serves does not change between two of them.
+        |
+        | Cached per gateway *and* per caller key: the caller's key is replayed
+        | upstream and LiteLLM answers a different list per virtual key, so the
+        | caller is part of the identity of the answer. Only a successful
+        | listing is stored; an upstream error is about this moment, not about
+        | the gateway. Set 0 to always ask the upstream.
+        */
+
+        'models_cache_ttl' => intval(env('API_MODELS_CACHE_TTL', 30)),
     ],
 
     /*
@@ -148,8 +166,14 @@ return [
         | them are measured, and `default_seconds` stands in until that many
         | have been answered at all.
         |
-        | Only the measurement is cached, for `ttl` seconds — a position is
-        | cheap to count and worthless once stale, so it is always read live.
+        | `ttl` covers everything that is the same answer for every caller: the
+        | measurement, the number of entries running, and the depth of the
+        | queue. Polling is unthrottled by design, so those are counted once a
+        | window and shared rather than recounted per poll.
+        |
+        | A position in line is not among them. It is cheap to count, it is the
+        | one number that actually moves, and it is worthless once stale — so it
+        | is read live on every poll.
         */
 
         'estimate' => [

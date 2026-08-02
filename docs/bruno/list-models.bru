@@ -1,0 +1,27 @@
+meta {
+  name: List models
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{host}}/v1/models
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{key}}
+}
+
+docs {
+  One of the endpoints this app answers synchronously rather than queueing
+  (see also **Show model**, **Create embedding**, **Create moderation**).
+  Proxies straight to the resolved gateway's upstream and normalises the
+  answer into an OpenAI models list — `{ "object": "list", "data": […] }`
+  — whatever the gateway's own protocol. Not rate limited, the same as
+  every other read.
+
+  Addressable under a gateway prefix too: `{{host}}/{{gateway}}/v1/models`
+  lists that gateway's models instead of the default's.
+}

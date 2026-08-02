@@ -36,7 +36,10 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email' => ['required', 'string', 'email'],
+            // Capped because the address becomes half of `throttleKey()`, and
+            // that is a cache key: an unbounded one lets an anonymous caller
+            // decide how much the rate limiter stores per attempt.
+            'email' => ['required', 'string', 'email', 'max:255'],
             'password' => ['required', 'string'],
         ];
     }

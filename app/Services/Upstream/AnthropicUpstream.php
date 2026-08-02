@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Upstream;
 
-use App\Models\Gateway;
 use App\Support\ChatPayload;
 use App\Support\JsonValue;
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 /**
@@ -19,26 +16,18 @@ use Illuminate\Support\Str;
  * instead of `Authorization`, and `system` is a top-level field rather than a
  * role inside `messages`. The key is still the caller's own — this moves it
  * to the header Anthropic reads, it does not supply one.
+ *
+ * Embeddings and moderations are left to `Upstream`'s passthrough. Anthropic
+ * has neither API, so there is nothing of its own to translate the body into
+ * — the request goes up as the caller sent it and Anthropic's own 404 is what
+ * tells the caller this upstream cannot answer it.
  */
-class AnthropicUpstream implements UpstreamDriver
+class AnthropicUpstream extends Upstream
 {
     /** Anthropic rejects a request without max_tokens; OpenAI treats it as optional. */
     private const DEFAULT_MAX_TOKENS = 4096;
 
     private const DEFAULT_VERSION = '2023-06-01';
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @param  array<string, string>  $headers
-     */
-    public function send(Gateway $gateway, array $payload, array $headers): Response
-    {
-        return Http::withHeaders($this->headers($headers))
-            ->timeout($gateway->timeout)
-            ->connectTimeout($gateway->connect_timeout)
-            ->post($gateway->endpoint(), $this->body($payload))
-            ->throw();
-    }
 
     /**
      * @param  array<array-key, mixed>  $body
@@ -66,19 +55,23 @@ class AnthropicUpstream implements UpstreamDriver
     }
 
     /**
-     * A count the upstream did not report stays null rather than being summed
-     * as a zero, so "it did not say" keeps reading differently from "none".
-     *
-     * @return array<string, int|null>
+     * @param  array<array-key, mixed>  $body
+     * @return array<array-key, mixed>
      */
-    private static function usage(?int $promptTokens, ?int $completionTokens): array
+    public function normaliseModels(array $body): array
     {
-        $reported = array_filter([$promptTokens, $completionTokens], fn (?int $count) => $count !== null);
-
         return [
-            'prompt_tokens' => $promptTokens,
-            'completion_tokens' => $completionTokens,
-            'total_tokens' => $reported === [] ? null : array_sum($reported),
+            'object' => 'list',
+            'data' => collect(JsonValue::arrayAt($body, 'data'))
+                ->map(fn (mixed $model) => [
+                    'id' => JsonValue::stringAt($model, 'id'),
+                    'object' => 'model',
+                    'created' => self::timestamp(JsonValue::stringAt($model, 'created_at')),
+                    'owned_by' => 'anthropic',
+                ])
+                ->filter(fn (array $model) => $model['id'] !== '')
+                ->values()
+                ->all(),
         ];
     }
 
@@ -86,7 +79,7 @@ class AnthropicUpstream implements UpstreamDriver
      * @param  array<string, string>  $headers
      * @return array<string, string>
      */
-    private function headers(array $headers): array
+    protected function headers(array $headers): array
     {
         $headers = array_change_key_case($headers);
 
@@ -112,7 +105,7 @@ class AnthropicUpstream implements UpstreamDriver
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    private function body(array $payload): array
+    protected function body(array $payload): array
     {
         $system = ChatPayload::systemPrompt($payload);
 

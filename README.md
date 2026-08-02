@@ -38,8 +38,14 @@ Which upstream a request lands on is a **gateway**: a row you manage in the
 dashboard, addressed by putting its id in front of `/v1`. A request that names
 none goes to the default. See [Gateways](#gateways).
 
-It deliberately does **one** thing. Synchronous and streaming traffic keeps
-going straight to your backend; this host only queues.
+It deliberately does **one** thing. Streaming and long-running *chat*
+traffic keeps going through the queue; this host does not stream. The
+exceptions are `GET /v1/models`, `GET /v1/models/{id}`, `POST /v1/embeddings`
+and `POST /v1/moderations` — none of them fit the `background: true` shape a
+completion does, so all four are answered straight from the upstream instead
+of through the backlog. Models is a cheap, idempotent read; embeddings and
+moderations still cost the upstream real compute, so they share the queue's
+per-caller rate limit even though nothing about them is queued.
 
 ## The problem
 
@@ -106,6 +112,10 @@ provide. This is that same tool, published as-is.
 | `GET /v1/responses` | your recent entries; `?status=failed&model=…&limit=50` |
 | `POST /v1/responses/{id}/cancel` | only while `queued`, otherwise `409` |
 | `DELETE /v1/responses/{id}` | remove the entry from the API; the row is kept |
+| `GET /v1/models` | **synchronous** — the resolved gateway's models, OpenAI-list shaped |
+| `GET /v1/models/{id}` | **synchronous** — `404` (`model_not_found`) if the gateway does not list it |
+| `POST /v1/embeddings` | **synchronous**, rate limited like a queued write — real upstream compute, not a plain read |
+| `POST /v1/moderations` | **synchronous**, rate limited like a queued write |
 | `GET /up` | liveness — `200` once the app boots |
 | anything else under `/v1` | `404` with an async-only hint |
 
@@ -527,6 +537,13 @@ The answer lands in `output[0].content[0].text`.
 - **Reasoning models** — the answer falls back to `reasoning_content` and
   strips `<think>` blocks; otherwise Qwen3-style models return empty text.
 - **History is kept forever** — `DELETE` only soft-deletes, and there is no pruning. The backlog *is* the archive.
+- **There is always exactly one *usable* default gateway** — routing reads
+  `is_default` *and* `is_active`, so a default that has stopped taking work
+  answers `503` to every request that arrives without a gateway id. Retiring the
+  default is refused, deactivating it is refused, and promoting a gateway
+  activates it. Move the flag first, then deactivate.
+- **Upstream calls do not follow redirects** — a `base_url` is the address an
+  operator reviewed, and a `302` would quietly make it a different one.
 
 ## Deployment
 

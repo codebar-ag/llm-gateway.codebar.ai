@@ -33,8 +33,10 @@ it('shows a queued entry with only the Request, Response, and Meta tabs, default
         ->assertAttribute(entryTab('Request'), 'aria-selected', 'true')
         ->assertAttribute(entryTab('Response'), 'aria-selected', 'false')
         ->assertAttribute(entryTab('Meta'), 'aria-selected', 'false')
-        // Only Request and Response have a download button on a queued entry.
-        ->assertCount('button:has-text("Download")', 2);
+        // Only Request and Response have a download link on a queued entry.
+        // An anchor, not a button: these are real `href`s so the browser does
+        // the download, which is what the anchor-downloads test below pins.
+        ->assertCount('a:has-text("Download")', 2);
 });
 
 it('shows a completed entry with an additional Answer tab, defaulting to Answer', function () {
@@ -211,8 +213,11 @@ it('navigates back to the backlog via the "Back to backlog" link', function () {
 
     [$page] = signIn();
 
+    // Matched as a selector rather than as bare text: the link reads
+    // "← Back to backlog", and a click that waits for an exact text match
+    // never resolves — it hangs the suite instead of failing it.
     $page->navigate("/entries/{$entry->id}")
-        ->click('Back to backlog')
+        ->click('a:has-text("Back to backlog")')
         ->assertPathIs('/')
         ->assertSee('LLM Gateway');
 });
@@ -222,9 +227,27 @@ it('copies the entry id to the clipboard via the CopyButton', function () {
 
     [$page] = signIn();
 
-    $page->navigate("/entries/{$entry->id}")
-        ->assertAttribute('button[aria-label="Copy id"]', 'aria-label', 'Copy id')
+    $page->navigate("/entries/{$entry->id}");
+
+    /*
+     | Headless Chromium refuses `clipboard.writeText`, and the design system's
+     | CopyButton awaits it before raising its toast — so left alone this asserts
+     | a browser permission rather than the page. The capability is stubbed
+     | instead, which also lets the test pin what was actually handed over
+     | rather than only that something said it had been.
+     */
+    $page->script(<<<'JS'
+        window.__copied = null;
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText: (value) => { window.__copied = value; return Promise.resolve(); } },
+        });
+    JS);
+
+    $page->assertAttribute('button[aria-label="Copy id"]', 'aria-label', 'Copy id')
         ->assertVisible('button[aria-label="Copy id"]')
         ->click('button[aria-label="Copy id"]')
         ->assertSee('Copied to clipboard');
+
+    expect($page->script('window.__copied'))->toBe($entry->id);
 });

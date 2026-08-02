@@ -1,0 +1,21 @@
+meta {
+  name: Show model
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{host}}/v1/models/{{model}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{key}}
+}
+
+docs {
+  Synchronous, like **List models** — reads that same list and returns the
+  entry whose `id` matches `{{model}}`. `404` with `error.type` set to
+  `model_not_found` when the gateway does not list it.
+}

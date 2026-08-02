@@ -158,6 +158,64 @@ it('projects a completion time from the wait', function () {
     expect($place->estimatedCompletionAt)->toBe(now()->addSeconds(30)->getTimestamp());
 });
 
+it('pays for the queue-wide counts once per run of polls, not once per poll', function () {
+    BacklogEntry::factory()->count(2)->create(['created_at' => now()->subMinute()]);
+    $mine = BacklogEntry::factory()->create();
+
+    // A cold poll pays for everything: position, running count, depth and the
+    // two reads behind the measurement.
+    $cold = queriesDuring(fn () => estimate()->for($mine));
+
+    cache()->flush();
+
+    $twice = queriesDuring(function () use ($mine) {
+        estimate()->for($mine);
+        estimate()->for($mine);
+    });
+
+    // The second poll re-reads only its own position; every global count the
+    // first poll made is served back to it.
+    expect($twice)->toBe($cold + 1)
+        ->and($twice)->toBeLessThan($cold * 2);
+});
+
+it('recounts the queue-wide totals once the cache window has passed', function () {
+    config()->set('gateway.backlog.estimate.ttl', 5);
+
+    $mine = BacklogEntry::factory()->create(['created_at' => now()->subMinute()]);
+
+    expect(estimate()->for($mine)->depth)->toBe(1);
+
+    BacklogEntry::factory()->create();
+
+    // Inside the window the second poll is handed the count the first paid
+    // for, which is the whole point of caching it. Depth is how busy the
+    // backlog is, not where this caller stands, so a few seconds behind is
+    // still the number they read it for.
+    expect(estimate()->for($mine))
+        ->depth->toBe(1)
+        ->position->toBe(1);
+
+    $this->travel(6)->seconds();
+
+    expect(estimate()->for($mine)->depth)->toBe(2);
+});
+
+it('never lets a cached running count freeze the place in line', function () {
+    config()->set('gateway.backlog.estimate.ttl', 5);
+
+    $ahead = BacklogEntry::factory()->create(['created_at' => now()->subMinute()]);
+    $mine = BacklogEntry::factory()->create();
+
+    expect(estimate()->for($mine)->position)->toBe(2);
+
+    $ahead->markCompleted('done', []);
+
+    // Same tick, so the global counts are still cached — the position is not,
+    // and a caller who has moved up must be told so on their very next poll.
+    expect(estimate()->for($mine)->position)->toBe(1);
+});
+
 it('reports no place for an entry that is no longer waiting', function (string $state) {
     $entry = BacklogEntry::factory()->{$state}()->create();
 

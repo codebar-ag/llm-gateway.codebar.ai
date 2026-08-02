@@ -12,13 +12,7 @@ class StoreGatewayController
 {
     public function __invoke(GatewayRequest $request, Gateways $gateways): RedirectResponse
     {
-        $gateway = $gateways->create($request->validatedAttributes());
-
-        // `create()` already promotes the very first gateway, so only ask for
-        // the flag when it is not already held.
-        if ($request->boolean('is_default') && ! $gateway->is_default) {
-            $gateways->makeDefault($gateway);
-        }
+        $gateway = $gateways->create($request->validatedAttributes(), $request->boolean('is_default'));
 
         return redirect()
             ->route('gateways')

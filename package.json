@@ -24,7 +24,6 @@
         "@codemirror/view": "^6.43.7",
         "@inertiajs/vue3": "^3.6.1",
         "@vitejs/plugin-vue": "^6.0.8",
-        "apexcharts": "^6.6.1",
         "vue": "^3.5.40"
     }
 }

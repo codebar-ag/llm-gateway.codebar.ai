@@ -7,6 +7,7 @@ use App\Models\User;
 use Database\Factories\UserFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Pest\Browser\Playwright\Page;
@@ -119,4 +120,29 @@ function backlogIds(TestResponse $response): array
     $entries = inertiaProps($response)['entries'];
 
     return array_column($entries, 'id');
+}
+
+/**
+ * How many statements the database was asked for while $work ran.
+ *
+ * Shared because two suites measure the same thing — the dashboard proving a
+ * partial reload is cheaper than a full one, and QueueEstimate proving the
+ * queue-wide counts are paid for once a window rather than once a poll.
+ *
+ * The query log rather than `DB::listen`: a listener stays registered for the
+ * rest of the process, so a second measurement in the same test would still be
+ * feeding the first one's tally.
+ */
+function queriesDuring(Closure $work): int
+{
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $work();
+
+    $queries = count(DB::getQueryLog());
+
+    DB::disableQueryLog();
+
+    return $queries;
 }
