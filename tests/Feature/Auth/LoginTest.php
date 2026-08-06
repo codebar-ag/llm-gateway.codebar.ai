@@ -30,7 +30,7 @@ it('signs an operator in and lands them on the backlog', function () {
     $this->post(route('login.store'), [
         'email' => $user->email,
         'password' => UserFactory::password(),
-    ])->assertRedirect(route('backlog'));
+    ])->assertRedirect(route('dashboard'));
 
     $this->assertAuthenticatedAs($user);
 });
@@ -40,12 +40,12 @@ it('returns to where the visitor was headed', function () {
     $user = User::factory()->create();
 
     // The redirect the guard issues is what stores the intended url.
-    $this->get(route('backlog.entry', $entry->id))->assertRedirect(route('login'));
+    $this->get(route('logs.entry', $entry->id))->assertRedirect(route('login'));
 
     $this->post(route('login.store'), [
         'email' => $user->email,
         'password' => UserFactory::password(),
-    ])->assertRedirect(route('backlog.entry', $entry->id));
+    ])->assertRedirect(route('logs.entry', $entry->id));
 });
 
 it('rejects a wrong password', function () {
@@ -107,7 +107,7 @@ it('spends the throttle budget on failures only', function () {
     $this->post(route('login.store'), [
         'email' => $user->email,
         'password' => UserFactory::password(),
-    ])->assertRedirect(route('backlog'));
+    ])->assertRedirect(route('dashboard'));
 
     $this->assertAuthenticatedAs($user);
 });
@@ -140,7 +140,7 @@ it('sends a guest to the login instead of the backlog', function () {
 it('keeps a signed-in operator away from the login form', function () {
     $this->actingAs(User::factory()->create())
         ->get(route('login'))
-        ->assertRedirect(route('backlog'));
+        ->assertRedirect(route('dashboard'));
 });
 
 it('regenerates the session id when signing in', function () {
@@ -197,7 +197,7 @@ it('is reachable through the token guard once one is configured', function () {
         ->post(route('login.store'), [
             'email' => $user->email,
             'password' => UserFactory::password(),
-        ])->assertRedirect(route('backlog'));
+        ])->assertRedirect(route('dashboard'));
 
     $this->assertAuthenticatedAs($user);
 });

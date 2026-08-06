@@ -8,25 +8,25 @@ use App\Models\BacklogEntry;
 use App\Models\Gateway;
 
 /*
- | Status tiles render one InertiaLink per BacklogStatus case, in enum
- | declaration order: queued, in_progress, completed, failed, cancelled.
- | Several tests below target a tile by its 1-based position in that grid
- | rather than by href, since an *active* tile's href has its `status` query
- | param stripped (that's the whole point of the toggle) and so cannot be
- | matched by content.
+ | Signing in lands on the dashboard, so every test here navigates to the
+ | listing first. Status is one of the five dropdowns on this page now; the
+ | tiles that used to sit above the table are on the dashboard.
  */
 
-it('renders the backlog page with its filter form and status tiles', function () {
+it('renders the logs page with its search box and filter row', function () {
     [$page] = signIn();
 
-    $page->assertSee('LLM Gateway')
+    $page->navigate('/logs');
+
+    $page->assertSee('Logs')
         ->assertSee('Entry ID')
+        ->assertSee('Status')
         ->assertSee('Model')
         ->assertSee('Gateway')
         ->assertSee('Caller')
         ->assertAttribute('input[name="q"]', 'type', 'search')
         ->assertAttribute('input[name="q"]', 'placeholder', 'resp_…')
-        ->assertCount('.grid-cols-2 > a', 5);
+        ->assertPresent('select[name="status"]');
 });
 
 it('filters entries by typing into the entry id search box', function () {
@@ -34,6 +34,8 @@ it('filters entries by typing into the entry id search box', function () {
     BacklogEntry::factory()->create(['id' => 'resp_other0002']);
 
     [$page] = signIn();
+
+    $page->navigate('/logs');
 
     $page->fill('q', 'resp_findme')
         ->click('button[type="submit"]')
@@ -47,6 +49,8 @@ it('filters entries by selecting a model from the dropdown', function () {
     BacklogEntry::factory()->create(['id' => 'resp_modelother', 'model' => 'other-model']);
 
     [$page] = signIn();
+
+    $page->navigate('/logs');
 
     $page->select('model', 'wanted-model')
         ->click('button[type="submit"]')
@@ -63,6 +67,8 @@ it('filters entries by selecting a gateway from the dropdown', function () {
     BacklogEntry::factory()->create(['id' => 'resp_gwother', 'gateway_id' => $gatewayB->id]);
 
     [$page] = signIn();
+
+    $page->navigate('/logs');
 
     $page->select('gateway', $gatewayA->id)
         ->click('button[type="submit"]')
@@ -82,6 +88,8 @@ it('filters entries by selecting a named caller from the dropdown', function () 
 
     [$page] = signIn();
 
+    $page->navigate('/logs');
+
     $page->select('caller', hash('sha256', 'sk-caller-two'))
         ->click('button[type="submit"]')
         ->assertQueryStringHas('caller', hash('sha256', 'sk-caller-two'))
@@ -95,6 +103,8 @@ it('filters by the anonymous caller sentinel and shows the no-bearer-token toolt
     BacklogEntry::factory()->create(['id' => 'resp_named0002']);
 
     [$page] = signIn();
+
+    $page->navigate('/logs');
 
     $page->select('caller', 'anonymous')
         ->click('button[type="submit"]')
@@ -110,6 +120,8 @@ it('treats a literal percent sign as a character typed into the search box, not 
 
     [$page] = signIn();
 
+    $page->navigate('/logs');
+
     $page->fill('q', '%')
         ->click('button[type="submit"]')
         ->assertValue('q', '%')
@@ -117,32 +129,30 @@ it('treats a literal percent sign as a character typed into the search box, not 
         ->assertSee('No entries match this filter.');
 });
 
-it('rings the active status tile and lets clicking it again toggle the filter off', function () {
-    BacklogEntry::factory()->failed()->create();
-    BacklogEntry::factory()->completed()->create();
-
-    [$page] = signIn();
-
-    $page->navigate(route('backlog', ['status' => 'failed']))
-        // 4th tile = failed.
-        ->assertAttributeContains('.grid-cols-2 > a:nth-child(4) > div', 'class', 'ring-2 ring-accent')
-        // 1st tile = queued, not active.
-        ->assertAttributeDoesntContain('.grid-cols-2 > a:nth-child(1) > div', 'class', 'ring-2')
-        ->click('.grid-cols-2 > a:nth-child(4)')
-        ->assertQueryStringMissing('status')
-        ->assertAttributeDoesntContain('.grid-cols-2 > a:nth-child(4) > div', 'class', 'ring-2');
-});
-
-it('filters the listing by clicking an inactive status tile', function () {
+it('filters entries by selecting a status from the dropdown', function () {
     BacklogEntry::factory()->completed()->create(['id' => 'resp_completedone']);
     BacklogEntry::factory()->failed()->create(['id' => 'resp_failedone']);
 
     [$page] = signIn();
 
-    $page->click('.grid-cols-2 > a:nth-child(3)') // 3rd tile = completed.
+    $page->navigate('/logs');
+
+    $page->select('status', 'completed')
+        ->click('button[type="submit"]')
         ->assertQueryStringHas('status', 'completed')
         ->assertSee('#resp_completedone')
         ->assertDontSee('#resp_failedone');
+});
+
+it('keeps a status arrived at by URL selected in the dropdown', function () {
+    BacklogEntry::factory()->failed()->create();
+
+    [$page] = signIn();
+
+    // How a dashboard tile arrives here — the dropdown has to agree with the
+    // listing it is looking at, or the next search silently drops the filter.
+    $page->navigate(route('logs', ['status' => 'failed']))
+        ->assertValue('status', 'failed');
 });
 
 it('only shows the reset link once a filter is active, and clears it on click', function () {
@@ -150,13 +160,15 @@ it('only shows the reset link once a filter is active, and clears it on click', 
 
     [$page] = signIn();
 
+    $page->navigate('/logs');
+
     $page->assertDontSee('Reset');
 
-    $page->navigate(route('backlog', ['status' => 'failed']))
+    $page->navigate(route('logs', ['status' => 'failed']))
         ->assertSee('Reset')
         ->click('a:has-text("Reset")')
         ->assertQueryStringMissing('status')
-        ->assertPathIs('/')
+        ->assertPathIs('/logs')
         ->assertDontSee('Reset');
 });
 
@@ -164,6 +176,8 @@ it('shows the empty state when a filter matches nothing', function () {
     BacklogEntry::factory()->create(['id' => 'resp_exists0001']);
 
     [$page] = signIn();
+
+    $page->navigate('/logs');
 
     $page->fill('q', 'resp_doesnotexist')
         ->click('button[type="submit"]')
@@ -175,6 +189,8 @@ it('paginates with previous/next buttons that only appear when needed', function
     BacklogEntry::factory()->count(101)->create(['created_at' => now()]);
 
     [$page] = signIn();
+
+    $page->navigate('/logs');
 
     $page->assertSee('Showing 100 of 101 entries')
         ->assertMissing('a:has-text("Previous")')
@@ -203,6 +219,8 @@ it('drops the pagination cursor and returns to page one when a filter changes mi
 
     [$page] = signIn();
 
+    $page->navigate('/logs');
+
     $page->click('a:has-text("Next")')
         ->assertQueryStringHas('cursor')
         ->assertSee('#'.$special->id)
@@ -221,11 +239,13 @@ it('prefixes every entry id in the table with a literal hash', function () {
 
     [$page] = signIn();
 
+    $page->navigate('/logs');
+
     $page->assertSee('#'.$entry->id)
         ->assertSeeIn('tbody tr td:nth-child(1)', '#'.$entry->id);
 });
 
-it('shows the exact created timestamp as a row tooltip', function () {
+it('shows the clock time an entry was created, with the exact stamp as a tooltip', function () {
     $entry = BacklogEntry::factory()->create([
         'id' => 'resp_tooltipcheck',
         'status' => BacklogStatus::Completed,
@@ -234,12 +254,14 @@ it('shows the exact created timestamp as a row tooltip', function () {
         'finished_at' => now()->subSeconds(20),
     ]);
 
-    $expectedCreatedExact = $entry->created_at->toDateTimeString();
-
     [$page] = signIn();
 
+    $page->navigate('/logs');
+
     // Entry, status, gateway/model, caller, created.
-    $page->assertAttribute('tbody tr td:nth-child(5) span', 'title', $expectedCreatedExact);
+    $page
+        ->assertSeeIn('tbody tr td:nth-child(5)', $entry->created_at->format('d.m.Y H:i:s'))
+        ->assertAttribute('tbody tr td:nth-child(5) > div', 'title', $entry->created_at->toDateTimeString());
 });
 
 it('pairs the gateway with its model in one column', function () {
@@ -252,6 +274,8 @@ it('pairs the gateway with its model in one column', function () {
     ]);
 
     [$page] = signIn();
+
+    $page->navigate('/logs');
 
     $page->assertSeeIn('tbody tr td:nth-child(3)', 'Mac Ollama')
         ->assertSeeIn('tbody tr td:nth-child(3)', 'qwen3-vl:30b-a3b');
@@ -268,6 +292,8 @@ it('leaves attempts, waited and duration to the entry page', function () {
 
     [$page] = signIn();
 
+    $page->navigate('/logs');
+
     // waited = 250s = "4m 10s", duration = 130s = "2m 10s". Both belong to the
     // entry page now, so neither the headings nor the values appear out here.
     $page->assertDontSee('Waited')
@@ -282,6 +308,8 @@ it('warns about the oldest queued entry', function () {
 
     [$page] = signIn();
 
+    $page->navigate('/logs');
+
     $page->assertSee('Oldest queued entry is waiting since')
         ->assertSee('45');
 });
@@ -291,6 +319,8 @@ it('hides the oldest-queued warning when nothing is queued', function () {
 
     [$page] = signIn();
 
+    $page->navigate('/logs');
+
     $page->assertDontSee('Oldest queued entry is waiting since');
 });
 
@@ -298,6 +328,8 @@ it('advertises the auto-refresh interval in the table footer', function () {
     BacklogEntry::factory()->create();
 
     [$page] = signIn();
+
+    $page->navigate('/logs');
 
     $page->assertSee('Auto-refreshes every 15');
 });
@@ -309,7 +341,9 @@ it('keeps the active status filter when submitting a search from a filtered view
 
     [$page] = signIn();
 
-    $page->navigate(route('backlog', ['status' => 'failed']))
+    $page->navigate('/logs');
+
+    $page->navigate(route('logs', ['status' => 'failed']))
         ->select('model', 'combo-model')
         ->click('button[type="submit"]')
         ->assertQueryStringHas('status', 'failed')

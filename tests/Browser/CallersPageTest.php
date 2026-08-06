@@ -252,7 +252,7 @@ it('navigates to the backlog filtered by this callers hash via the entries link'
 
     $page->navigate('/callers')
         ->click('button:text-is("Entries")')
-        ->assertPathIs('/')
+        ->assertPathIs('/logs')
         ->assertQueryStringHas('caller', $hash)
         ->assertSee('Nightly batch');
 });

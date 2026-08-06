@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Http;
  | tests/Browser/Screenshots.
  */
 
-it('captures the backlog and entry detail screens', function () {
+it('captures the dashboard, the logs and the entry detail screens', function () {
     config([
         'gateway.tunnel.metrics_url' => 'http://127.0.0.1:20241',
         'gateway.backlog.workers' => 2,
@@ -123,8 +123,13 @@ it('captures the backlog and entry detail screens', function () {
         'email' => 'sebastian.buergin@codebar.ch',
     ]));
 
+    // Signing in lands on the dashboard, which is the shot that leads.
     $page->resize(1440, 1000)
-        ->screenshot(filename: 'llm-gateway-backlog');
+        ->screenshot(filename: 'llm-gateway-dashboard');
+
+    visit('/logs')
+        ->resize(1440, 1000)
+        ->screenshot(filename: 'llm-gateway-logs');
 
     // Shorter viewport: the detail page ends well above 1000px and a full-page
     // capture would otherwise pad the image with empty canvas.

@@ -63,7 +63,7 @@ it('stores the shown password hashed, and it works', function () {
 
     // The end that matters: the string it printed is the string that signs in.
     $this->post(route('login.store'), ['email' => 'ops@example.com', 'password' => $password])
-        ->assertRedirect(route('backlog'));
+        ->assertRedirect(route('dashboard'));
 
     $this->assertAuthenticatedAs($user);
 });

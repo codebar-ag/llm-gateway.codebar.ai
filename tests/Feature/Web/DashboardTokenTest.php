@@ -21,7 +21,7 @@ it('refuses the backlog without a token', function () {
 it('refuses an entry without a token', function () {
     $entry = BacklogEntry::factory()->completed()->create();
 
-    $this->get(route('backlog.entry', $entry->id))->assertForbidden();
+    $this->get(route('logs.entry', $entry->id))->assertForbidden();
 });
 
 it('refuses a wrong token', function () {
@@ -72,7 +72,7 @@ it('keeps the other filters when it strips the token', function () {
 it('strips the token from an entry url too', function () {
     $entry = BacklogEntry::factory()->completed()->create();
 
-    $this->get(route('backlog.entry', $entry->id).'?token='.dashboardToken())
+    $this->get(route('logs.entry', $entry->id).'?token='.dashboardToken())
         ->assertRedirect('/entries/'.$entry->id);
 });
 

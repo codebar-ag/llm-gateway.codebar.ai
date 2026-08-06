@@ -139,10 +139,10 @@ it('shows the api key hash copy button when present, hides it when absent, and n
 it('offers real anchor downloads for every present part, and omits the button for tabs that do not exist', function () {
     $entry = BacklogEntry::factory()->completed()->create();
 
-    $requestUrl = route('backlog.entry.download', ['id' => $entry->id, 'part' => 'request']);
-    $responseUrl = route('backlog.entry.download', ['id' => $entry->id, 'part' => 'response']);
-    $answerUrl = route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']);
-    $errorUrl = route('backlog.entry.download', ['id' => $entry->id, 'part' => 'error']);
+    $requestUrl = route('logs.entry.download', ['id' => $entry->id, 'part' => 'request']);
+    $responseUrl = route('logs.entry.download', ['id' => $entry->id, 'part' => 'response']);
+    $answerUrl = route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']);
+    $errorUrl = route('logs.entry.download', ['id' => $entry->id, 'part' => 'error']);
 
     [$page] = signIn();
 
@@ -214,12 +214,12 @@ it('navigates back to the backlog via the "Back to backlog" link', function () {
     [$page] = signIn();
 
     // Matched as a selector rather than as bare text: the link reads
-    // "← Back to backlog", and a click that waits for an exact text match
+    // "← Back to logs", and a click that waits for an exact text match
     // never resolves — it hangs the suite instead of failing it.
     $page->navigate("/entries/{$entry->id}")
-        ->click('a:has-text("Back to backlog")')
-        ->assertPathIs('/')
-        ->assertSee('LLM Gateway');
+        ->click('a:has-text("Back to logs")')
+        ->assertPathIs('/logs')
+        ->assertSee('Logs');
 });
 
 it('copies the entry id to the clipboard via the CopyButton', function () {

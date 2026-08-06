@@ -11,10 +11,8 @@ const props = defineProps({
     gateways: { type: Array, required: true },
     callers: { type: Array, required: true },
     entries: { type: Array, required: true },
-    oldestQueued: { type: String, default: null },
     total: { type: Number, required: true },
     pagination: { type: Object, required: true },
-    summary: { type: Object, required: true },
     urls: { type: Object, required: true },
 });
 
@@ -32,8 +30,15 @@ const columns = [
     { key: 'created', label: 'Created', align: 'right' },
 ];
 
+/*
+ | Status is one of the five dropdowns now, not a row of tiles above the table.
+ | The tiles counted the whole backlog rather than the filtered listing, which
+ | made them a dashboard someone had to scroll past to reach the logs — so they
+ | are on the dashboard, where the rest of the numbers live.
+ */
 const form = reactive({
     q: props.filters.search,
+    status: props.filters.status,
     kind: props.filters.kind,
     model: props.filters.model,
     gateway: props.filters.gateway,
@@ -45,7 +50,7 @@ const form = reactive({
  | and a cursor taken from one result set silently skips rows in another.
  */
 function search() {
-    router.get(props.urls.backlog, { ...form, status: props.filters.status }, {
+    router.get(props.urls.logs, { ...form }, {
         preserveState: true,
         preserveScroll: true,
         replace: true,
@@ -67,138 +72,140 @@ function search() {
  | moves on points Next at a boundary that no longer exists.
  */
 usePoll(15000, {
-    only: ['entries', 'statuses', 'total', 'oldestQueued', 'summary', 'pagination'],
+    only: ['entries', 'total', 'pagination'],
 });
 </script>
 
 <template>
-    <Head title="Backlog" />
+    <Head title="Logs" />
 
     <Dashboard>
         <header class="flex flex-wrap items-end justify-between gap-3">
             <PageHeading>
-                LLM Gateway
+                Logs
                 <template #description>
-                    {{ summary.workers }} {{ summary.workers === 1 ? 'worker' : 'workers' }}
-                    &rarr; {{ summary.endpoint ?? 'no default gateway' }}
+                    Every request the gateway has accepted, newest first.
                 </template>
             </PageHeading>
         </header>
 
-        <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <InertiaLink
-                v-for="status in statuses"
-                :key="status.value"
-                :href="status.href"
-                preserve-scroll
-            >
-                <Card
-                    hoverable
-                    :class="status.active ? 'ring-2 ring-accent' : ''"
-                >
-                    <Metric
-                        :label="status.label"
-                        :value="status.count"
-                    />
-                </Card>
-            </InertiaLink>
-        </div>
-
-        <Alert
-            v-if="oldestQueued"
-            variant="warning"
-            class="mt-3"
-        >
-            Oldest queued entry is waiting since {{ oldestQueued }}.
-        </Alert>
-
         <Card class="mt-6">
+            <!--
+             | Two rows, not one: looking an entry up by its id and narrowing the
+             | listing down are different errands. Someone arriving from a
+             | caller's own logs has the id in the clipboard and nothing else to
+             | say, and on one row that box was the same size as four dropdowns
+             | it has nothing to do with.
+             -->
             <form
-                class="flex flex-wrap items-end gap-3"
+                class="space-y-4"
                 @submit.prevent="search"
             >
-                <div class="min-w-64 flex-1 sm:max-w-[50%]">
-                    <Field
-                        label="Entry ID"
-                        name="q"
-                    >
-                        <Input
-                            v-model="form.q"
+                <div class="flex flex-wrap items-end gap-3">
+                    <div class="min-w-64 flex-1">
+                        <Field
+                            label="Entry ID"
                             name="q"
-                            type="search"
-                            placeholder="resp_…"
-                        />
-                    </Field>
-                </div>
+                        >
+                            <Input
+                                v-model="form.q"
+                                name="q"
+                                type="search"
+                                placeholder="resp_…"
+                            />
+                        </Field>
+                    </div>
 
-                <div class="min-w-40 flex-1">
-                    <Field
-                        label="Endpoint"
-                        name="kind"
-                    >
-                        <Select
-                            v-model="form.kind"
-                            name="kind"
-                            :options="kinds"
-                            placeholder="All endpoints"
-                        />
-                    </Field>
-                </div>
-
-                <div class="min-w-40 flex-1">
-                    <Field
-                        label="Model"
-                        name="model"
-                    >
-                        <Select
-                            v-model="form.model"
-                            name="model"
-                            :options="models"
-                            placeholder="All models"
-                        />
-                    </Field>
-                </div>
-
-                <div class="min-w-40 flex-1">
-                    <Field
-                        label="Gateway"
-                        name="gateway"
-                    >
-                        <Select
-                            v-model="form.gateway"
-                            name="gateway"
-                            :options="gateways"
-                            placeholder="All gateways"
-                        />
-                    </Field>
-                </div>
-
-                <div class="min-w-40 flex-1">
-                    <Field
-                        label="Caller"
-                        name="caller"
-                    >
-                        <Select
-                            v-model="form.caller"
-                            name="caller"
-                            :options="callers"
-                            placeholder="All callers"
-                        />
-                    </Field>
-                </div>
-
-                <div class="flex w-full flex-wrap items-center gap-3 sm:ml-auto sm:w-auto">
+                    <!-- The form's only submit, so it sends the filters below
+                         too — wherever the cursor happens to be when Enter is
+                         pressed. -->
                     <Button
                         type="submit"
                         class="w-full sm:w-auto"
                     >
                         Search
                     </Button>
+                </div>
 
+                <Divider label="Filters" />
+
+                <div class="flex flex-wrap items-end gap-3">
+                    <div class="min-w-40 flex-1">
+                        <Field
+                            label="Status"
+                            name="status"
+                        >
+                            <Select
+                                v-model="form.status"
+                                name="status"
+                                :options="statuses"
+                                placeholder="All statuses"
+                            />
+                        </Field>
+                    </div>
+
+                    <div class="min-w-40 flex-1">
+                        <Field
+                            label="Endpoint"
+                            name="kind"
+                        >
+                            <Select
+                                v-model="form.kind"
+                                name="kind"
+                                :options="kinds"
+                                placeholder="All endpoints"
+                            />
+                        </Field>
+                    </div>
+
+                    <div class="min-w-40 flex-1">
+                        <Field
+                            label="Model"
+                            name="model"
+                        >
+                            <Select
+                                v-model="form.model"
+                                name="model"
+                                :options="models"
+                                placeholder="All models"
+                            />
+                        </Field>
+                    </div>
+
+                    <div class="min-w-40 flex-1">
+                        <Field
+                            label="Gateway"
+                            name="gateway"
+                        >
+                            <Select
+                                v-model="form.gateway"
+                                name="gateway"
+                                :options="gateways"
+                                placeholder="All gateways"
+                            />
+                        </Field>
+                    </div>
+
+                    <div class="min-w-40 flex-1">
+                        <Field
+                            label="Caller"
+                            name="caller"
+                        >
+                            <Select
+                                v-model="form.caller"
+                                name="caller"
+                                :options="callers"
+                                placeholder="All callers"
+                            />
+                        </Field>
+                    </div>
+
+                    <!-- Clears the search box as well as these dropdowns, so it
+                         belongs to the form rather than to this row. -->
                     <Link
                         v-if="!filters.areEmpty"
                         :as="InertiaLink"
-                        :href="urls.backlog"
+                        :href="urls.logs"
                         tone="muted"
                         class="w-full py-2 text-center sm:w-auto sm:py-0 sm:text-left"
                     >
@@ -251,10 +258,16 @@ usePoll(15000, {
                     </span>
                 </template>
 
-                <!-- The rounded span carries the measurement it came from, so a
-                     "25m" is never the only number on the page. -->
+                <!-- Both lines carry the measurement they were rounded from, so
+                     a "25m" is never the only number on the page. -->
                 <template #cell-created="{ row }">
-                    <span :title="row.created.exact">{{ row.created.short }}</span>
+                    <div class="leading-tight" :title="row.created.exact">
+                        <!-- `tabular-nums` so the seconds column lines up down
+                             the page and a row is found by scanning rather
+                             than by reading. -->
+                        <div class="whitespace-nowrap tabular-nums">{{ row.created.stamp }}</div>
+                        <div class="text-xs text-dim">{{ row.created.short }}</div>
+                    </div>
                 </template>
 
                 <template #row-actions="{ row }">

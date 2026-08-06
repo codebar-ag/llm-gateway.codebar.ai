@@ -28,7 +28,7 @@ it('downloads the request as pretty-printed json', function () {
     ]);
 
     $response = asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'request']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'request']))
         ->assertOk()
         ->assertDownload($entry->id.'_request.json')
         ->assertHeader('Content-Type', 'application/json');
@@ -50,7 +50,7 @@ it('downloads the upstream output as json', function () {
     $entry = BacklogEntry::factory()->completed('the answer is 42')->create();
 
     $response = asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'response']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'response']))
         ->assertOk()
         ->assertDownload($entry->id.'_response.json')
         ->assertHeader('Content-Type', 'application/json');
@@ -64,7 +64,7 @@ it('downloads the answer as markdown', function () {
     $entry = BacklogEntry::factory()->completed("# Heading\n\nthe answer is 42")->create();
 
     $response = asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']))
         ->assertOk()
         ->assertDownload($entry->id.'_answer.md')
         ->assertHeader('Content-Type', 'text/markdown; charset=utf-8');
@@ -76,7 +76,7 @@ it('downloads a structured answer as json', function () {
     $entry = BacklogEntry::factory()->completed('{"rechnungsnummer":"2026-4471","total":1284.50}')->create();
 
     $response = asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']))
         ->assertOk()
         ->assertDownload($entry->id.'_answer.json')
         ->assertHeader('Content-Type', 'application/json');
@@ -90,7 +90,7 @@ it('downloads a prose answer that merely mentions braces as markdown', function 
     $entry = BacklogEntry::factory()->completed('{ this is not json')->create();
 
     asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']))
         ->assertOk()
         ->assertDownload($entry->id.'_answer.md')
         ->assertHeader('Content-Type', 'text/markdown; charset=utf-8');
@@ -100,7 +100,7 @@ it('downloads the error as json', function () {
     $entry = BacklogEntry::factory()->failed('upstream unavailable')->create();
 
     $response = asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'error']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'error']))
         ->assertOk()
         ->assertDownload($entry->id.'_error.json')
         ->assertHeader('Content-Type', 'application/json');
@@ -114,7 +114,7 @@ it('leaves slashes and unicode as they were written', function () {
     ]);
 
     $content = asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'request']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'request']))
         ->assertOk()
         ->streamedContent();
 
@@ -131,7 +131,7 @@ it('names the file after the entry id without decorating it', function () {
     expect($entry->id)->toStartWith('resp_');
 
     asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']))
         ->assertDownload($entry->id.'_answer.md');
 });
 
@@ -145,7 +145,7 @@ it('refuses a part that has nothing in it', function (string $part) {
     $entry = BacklogEntry::factory()->create();
 
     asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => $part]))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => $part]))
         ->assertNotFound();
 })->with(['response', 'answer', 'error']);
 
@@ -153,13 +153,13 @@ it('refuses the error of an entry that did not fail', function () {
     $entry = BacklogEntry::factory()->completed()->create();
 
     asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'error']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'error']))
         ->assertNotFound();
 });
 
 it('refuses an unknown entry', function () {
     asOperator()
-        ->get(route('backlog.entry.download', ['id' => 'resp_missing', 'part' => 'request']))
+        ->get(route('logs.entry.download', ['id' => 'resp_missing', 'part' => 'request']))
         ->assertNotFound();
 });
 
@@ -174,7 +174,7 @@ it('never hands a prompt to a visitor without the token', function () {
         'request' => ['model' => 'test', 'messages' => [['role' => 'user', 'content' => 'invoice total']]],
     ]);
 
-    $this->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'request']))
+    $this->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'request']))
         ->assertForbidden()
         ->assertDontSee('invoice total');
 });
@@ -185,7 +185,7 @@ it('never hands a prompt to a visitor who holds the token but no session', funct
     ]);
 
     $this->withCookie(VerifyDashboardToken::COOKIE, dashboardToken())
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'request']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'request']))
         ->assertRedirect(route('login'))
         ->assertDontSee('invoice total');
 });
@@ -194,7 +194,7 @@ it('refuses a signed-in operator who lost the token', function () {
     $entry = BacklogEntry::factory()->completed()->create();
 
     $this->actingAs(User::factory()->create())
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']))
         ->assertForbidden();
 });
 
@@ -202,7 +202,7 @@ it('downloads an embedding answer as the summary the page shows', function () {
     $entry = BacklogEntry::factory()->embedded()->create();
 
     $response = asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']))
         ->assertOk();
 
     expect($response->streamedContent())->toBe('2 embeddings × 4 dimensions');
@@ -212,7 +212,7 @@ it('downloads the vectors themselves as the response part', function () {
     $entry = BacklogEntry::factory()->embedded()->create();
 
     $response = asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'response']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'response']))
         ->assertOk();
 
     expect($response->streamedContent())->toContain('"embedding"')
@@ -225,6 +225,6 @@ it('404s the answer of an embedding that has not been run yet', function () {
     $entry = BacklogEntry::factory()->embeddings()->create();
 
     asOperator()
-        ->get(route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']))
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']))
         ->assertNotFound();
 });

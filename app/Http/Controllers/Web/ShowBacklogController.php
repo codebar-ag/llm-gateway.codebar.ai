@@ -13,7 +13,6 @@ use App\Support\BacklogFilters;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Config;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -40,10 +39,9 @@ class ShowBacklogController
             ->cursorPaginate(self::PER_PAGE)
             ->withQueryString();
 
-        $defaultGateway = Gateway::default();
         $labels = self::labels();
 
-        return Inertia::render('Backlog', [
+        return Inertia::render('Logs', [
             'filters' => [
                 'status' => $filters->status?->value,
                 'kind' => $filters->kind?->value,
@@ -53,7 +51,7 @@ class ShowBacklogController
                 'caller' => $filters->caller,
                 'areEmpty' => $filters->areEmpty(),
             ],
-            'statuses' => self::statusTiles($request, $filters, $counts),
+            'statuses' => self::statusOptions(),
 
             /*
              | Lazily resolved, all three: the page reloads itself every fifteen
@@ -77,21 +75,16 @@ class ShowBacklogController
             'entries' => collect($entries->items())
                 ->map(fn (BacklogEntry $entry): array => self::row($entry, $labels))
                 ->all(),
-            'oldestQueued' => BacklogEntry::oldestQueuedAt()?->diffForHumans(),
             'total' => self::total($filters, $matching, $counts),
             'pagination' => [
                 'prev' => $entries->previousPageUrl(),
                 'next' => $entries->nextPageUrl(),
             ],
-            'summary' => [
-                'workers' => Config::integer('gateway.backlog.workers'),
-                'endpoint' => $defaultGateway?->endpoint(),
-            ],
             // `filters`, `pagination` and `urls` stay plain: they are reads of
             // values this method already holds, so wrapping them would buy a
             // closure allocation and nothing else.
             'urls' => [
-                'backlog' => route('backlog'),
+                'logs' => route('logs'),
             ],
         ]);
     }
@@ -167,11 +160,19 @@ class ShowBacklogController
             // per-entry detail, and carrying them here widened every row on a
             // listing that reloads itself every fifteen seconds. The entry page
             // has all three.
+            /*
+             | The clock time leads and the rounded age follows it. "25m" alone
+             | answers "how long ago" but not "when", and on a listing someone
+             | reads next to an upstream's own logs the second question is the
+             | one being asked. Down to the second, because that is the
+             | resolution the upstream's own log lines are matched against.
+             */
             'created' => [
+                'stamp' => $entry->created_at->format('d.m.Y H:i:s'),
                 'short' => $entry->created_at->diffForHumans(short: true),
                 'exact' => $entry->created_at->toDateTimeString(),
             ],
-            'href' => route('backlog.entry', $entry->id),
+            'href' => route('logs.entry', $entry->id),
         ];
     }
 
@@ -233,31 +234,20 @@ class ShowBacklogController
     }
 
     /**
-     * The clickable status tiles, each toggling its own filter.
+     * Every status an entry can be in, for the filter.
      *
-     * `cursor`, not `page`: the listing is cursor paginated, and carrying a
-     * cursor taken from one filter's result set into another silently drops
-     * every row that sat before it.
+     * From the enum rather than from the counts, for the same reason the
+     * endpoints are: a day with nothing cancelled should offer the filter and
+     * come back empty, not drop the option.
      *
-     * @param  Collection<array-key, int>  $counts
-     * @return array<int, array<string, mixed>>
+     * @return array<int, array{value: string, label: string}>
      */
-    private static function statusTiles(Request $request, BacklogFilters $filters, Collection $counts): array
+    private static function statusOptions(): array
     {
-        return array_map(function (BacklogStatus $case) use ($request, $filters, $counts): array {
-            $active = $filters->status === $case;
-
-            return [
-                'value' => $case->value,
-                'label' => $case->label(),
-                'count' => $counts[$case->value] ?? 0,
-                'active' => $active,
-                'href' => $request->fullUrlWithQuery([
-                    'status' => $active ? null : $case->value,
-                    'cursor' => null,
-                ]),
-            ];
-        }, BacklogStatus::cases());
+        return array_map(
+            fn (BacklogStatus $case): array => ['value' => $case->value, 'label' => $case->label()],
+            BacklogStatus::cases(),
+        );
     }
 
     /**

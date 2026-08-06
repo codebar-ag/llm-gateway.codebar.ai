@@ -24,6 +24,14 @@ return [
         | touching this file, and `postgres` as the username default because
         | that is the role a stock local Postgres ships with.
         |
+        | `timezone` is not optional here. Eloquent writes and reads datetimes
+        | as bare `Y-m-d H:i:s` strings, and Postgres resolves a bare string
+        | against the *session* timezone — which, unset, is whatever the server
+        | happens to default to. A server one hour off Europe/Zurich then stores
+        | every `timestamptz` an hour away from the instant it meant, and the
+        | dashboard reads it back as an hour in the future. Pinning the session
+        | to the application timezone makes the round trip exact on any host.
+        |
         */
 
         'pgsql' => [
@@ -41,6 +49,7 @@ return [
             'username' => env('DB_USERNAME', 'postgres'),
             'password' => env('DB_PASSWORD', ''),
             'charset' => env('DB_CHARSET', 'utf8'),
+            'timezone' => env('DB_TIMEZONE', config('app.timezone')),
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',

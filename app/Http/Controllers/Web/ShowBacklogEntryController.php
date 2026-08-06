@@ -25,7 +25,7 @@ class ShowBacklogEntryController
         return Inertia::render('Entry', [
             'entry' => self::payload($entry),
             'urls' => [
-                'backlog' => route('backlog'),
+                'logs' => route('logs'),
                 'downloads' => self::downloads($entry),
             ],
         ]);
@@ -94,10 +94,10 @@ class ShowBacklogEntryController
     private static function downloads(BacklogEntry $entry): array
     {
         return [
-            'request' => route('backlog.entry.download', ['id' => $entry->id, 'part' => 'request']),
-            'response' => route('backlog.entry.download', ['id' => $entry->id, 'part' => 'response']),
-            'answer' => route('backlog.entry.download', ['id' => $entry->id, 'part' => 'answer']),
-            'error' => route('backlog.entry.download', ['id' => $entry->id, 'part' => 'error']),
+            'request' => route('logs.entry.download', ['id' => $entry->id, 'part' => 'request']),
+            'response' => route('logs.entry.download', ['id' => $entry->id, 'part' => 'response']),
+            'answer' => route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']),
+            'error' => route('logs.entry.download', ['id' => $entry->id, 'part' => 'error']),
         ];
     }
 

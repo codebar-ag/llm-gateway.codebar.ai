@@ -17,6 +17,6 @@ class StoreSessionController
         // be the id that now carries an authenticated session.
         $request->session()->regenerate();
 
-        return redirect()->intended(route('backlog'));
+        return redirect()->intended(route('dashboard'));
     }
 }

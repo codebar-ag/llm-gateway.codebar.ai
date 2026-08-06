@@ -57,6 +57,7 @@ uses()->beforeEach(function () {
 })->in(
     'Feature/Web/ShowBacklogControllerTest.php',
     'Feature/Web/ShowBacklogEntryControllerTest.php',
+    'Feature/Web/ShowDashboardControllerTest.php',
     'Feature/Web/GatewayCrudTest.php',
 );
 

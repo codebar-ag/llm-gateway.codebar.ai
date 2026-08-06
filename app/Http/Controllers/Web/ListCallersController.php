@@ -57,7 +57,7 @@ class ListCallersController
                         'exact' => $caller['last_seen']->toDateTimeString(),
                         'human' => $caller['last_seen']->diffForHumans(),
                     ],
-                    'entriesUrl' => route('backlog', ['caller' => $hash]),
+                    'entriesUrl' => route('logs', ['caller' => $hash]),
                     'destroyUrl' => route('callers.destroy', ['hash' => $hash]),
                 ];
             })
