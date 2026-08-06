@@ -204,6 +204,37 @@ it('leaves a soft deleted entry out of every number', function () {
         ->and($totals['totalTokens'])->toBe(0);
 });
 
+/*
+ | The dashboard reads every entry in the window, not a page of them, so it is
+ | the more exposed of the two: on a gateway that has been serving OCR for a
+ | month that is gigabytes of base64 sitting in `request`. It must add up the
+ | token counts without ever loading one.
+ */
+it('measures a window full of real OCR-sized payloads without reading them', function () {
+    $image = str_repeat('QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVph', 5_800);
+
+    $entries = BacklogEntry::factory()->count(100)->completed()->create([
+        'model' => 'paddle-ocr-vl',
+        'request' => ['model' => 'paddle-ocr-vl', 'messages' => [['role' => 'user', 'content' => $image]]],
+    ]);
+
+    $queued = $entries->count() * strlen($image);
+
+    unset($entries, $image);
+    gc_collect_cycles();
+
+    memory_reset_peak_usage();
+    $before = memory_get_usage();
+
+    $totals = inertiaProps($this->get('/')->assertOk())['totals'];
+
+    $spent = memory_get_peak_usage() - $before;
+
+    expect($totals['requests'])->toBe(100)
+        ->and($totals['totalTokens'])->toBe(1_500)
+        ->and($spent)->toBeLessThan((int) ($queued / 2));
+});
+
 it('does not run the usage aggregates on the auto-refresh reload', function () {
     BacklogEntry::factory()->count(5)->completed()->create();
 
