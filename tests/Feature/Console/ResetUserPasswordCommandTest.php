@@ -23,7 +23,7 @@ it('prints a password that actually signs in', function () {
     $password = generatedPassword('user:reset-password', ['--email' => 'ops@example.com']);
 
     $this->post(route('login.store'), ['email' => 'ops@example.com', 'password' => $password])
-        ->assertRedirect(route('backlog'));
+        ->assertRedirect(route('dashboard'));
 
     $this->assertAuthenticated();
 });

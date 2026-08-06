@@ -60,7 +60,7 @@ final class GatewayPayload
             'endpoint' => $gateway->endpoint(),
             'callerBaseUrl' => $gateway->callerBaseUrl(),
             'entries' => $gateway->entries_count,
-            'entriesUrl' => route('backlog', ['gateway' => $gateway->id]),
+            'entriesUrl' => route('logs', ['gateway' => $gateway->id]),
             'editUrl' => route('gateways.edit', $gateway),
             'defaultUrl' => route('gateways.default', $gateway),
             'destroyUrl' => route('gateways.destroy', $gateway),

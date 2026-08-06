@@ -72,7 +72,7 @@ it('signs an operator in and lands on the backlog', function () {
         ->fill('password', UserFactory::password())
         ->click('button[type="submit"]')
         ->assertPathIs('/')
-        ->assertSee('Backlog')
+        ->assertSee('Dashboard')
         ->assertSee('Sign out');
 
     $this->assertAuthenticatedAs($user);

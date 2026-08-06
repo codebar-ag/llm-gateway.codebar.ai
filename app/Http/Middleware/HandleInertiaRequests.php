@@ -38,7 +38,8 @@ class HandleInertiaRequests extends Middleware
             ],
 
             'nav' => [
-                'backlog' => route('backlog'),
+                'dashboard' => route('dashboard'),
+                'logs' => route('logs'),
                 'callers' => route('callers'),
                 'gateways' => route('gateways'),
                 'logout' => route('logout'),

@@ -34,17 +34,25 @@ function logout() {
         <template #navbar>
             <Navbar :menu-button="false">
                 <!-- overflow-x-auto + shrink-0: on a narrow viewport this row has
-                     less width than three links need. Without it the last link
+                     less width than four links need. Without it the last link
                      (Gateways) is silently squeezed out of view with no way to
                      reach it, instead of staying reachable via a scroll. -->
                 <nav class="flex items-center gap-4 overflow-x-auto">
                     <Link
                         :as="InertiaLink"
-                        :href="nav.backlog"
-                        :tone="isActive(nav.backlog) ? 'default' : 'muted'"
+                        :href="nav.dashboard"
+                        :tone="isActive(nav.dashboard) ? 'default' : 'muted'"
                         class="shrink-0"
                     >
-                        Backlog
+                        Dashboard
+                    </Link>
+                    <Link
+                        :as="InertiaLink"
+                        :href="nav.logs"
+                        :tone="isActive(nav.logs) ? 'default' : 'muted'"
+                        class="shrink-0"
+                    >
+                        Logs
                     </Link>
                     <Link
                         :as="InertiaLink"

@@ -88,10 +88,10 @@ const headerNamesPreview = computed(() => json(props.entry.headerNames));
             <div class="min-w-0">
                 <Link
                     :as="InertiaLink"
-                    :href="urls.backlog"
+                    :href="urls.logs"
                     tone="muted"
                 >
-                    &larr; Back to backlog
+                    &larr; Back to logs
                 </Link>
                 <PageHeading class="mt-1 font-mono">{{ entry.id }}</PageHeading>
             </div>

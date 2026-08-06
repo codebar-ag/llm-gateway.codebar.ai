@@ -13,6 +13,7 @@ use App\Http\Controllers\Web\ListGatewaysController;
 use App\Http\Controllers\Web\MakeGatewayDefaultController;
 use App\Http\Controllers\Web\ShowBacklogController;
 use App\Http\Controllers\Web\ShowBacklogEntryController;
+use App\Http\Controllers\Web\ShowDashboardController;
 use App\Http\Controllers\Web\ShowLoginController;
 use App\Http\Controllers\Web\StoreCallerLabelController;
 use App\Http\Controllers\Web\StoreGatewayController;
@@ -50,11 +51,23 @@ Route::middleware('dashboard')->group(function () {
 });
 
 Route::middleware(['dashboard', 'auth', 'auth.session'])->group(function () {
-    Route::get('/', ShowBacklogController::class)->name('backlog');
-    Route::get('/entries/{id}', ShowBacklogEntryController::class)->name('backlog.entry');
+    /*
+     | The dashboard is what `/` opens, and the log listing has a page of its
+     | own. The two answer different questions — how much is this being used,
+     | versus what happened to this one request — and stacking the first on top
+     | of a hundred rows of the second served neither.
+     |
+     | The route names follow the pages rather than the domain: an entry still
+     | belongs to "the backlog" everywhere in PHP, but an operator reading the
+     | nav is looking for logs.
+     */
+    Route::get('/', ShowDashboardController::class)->name('dashboard');
+
+    Route::get('/logs', ShowBacklogController::class)->name('logs');
+    Route::get('/entries/{id}', ShowBacklogEntryController::class)->name('logs.entry');
     Route::get('/entries/{id}/download/{part}', DownloadEntryPartController::class)
         ->whereIn('part', ['request', 'response', 'answer', 'error'])
-        ->name('backlog.entry.download');
+        ->name('logs.entry.download');
 
     Route::get('/callers', ListCallersController::class)->name('callers');
     Route::post('/callers', StoreCallerLabelController::class)->name('callers.store');

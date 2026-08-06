@@ -79,7 +79,7 @@ it('links the entries count to the backlog filtered by that gateway', function (
 
     $page->navigate('/gateways')
         ->click('table tbody tr:nth-child(1) td:nth-child(8) a')
-        ->assertPathIs('/')
+        ->assertPathIs('/logs')
         ->assertQueryStringHas('gateway', $gateway->id);
 });
 

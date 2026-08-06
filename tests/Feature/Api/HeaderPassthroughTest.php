@@ -111,7 +111,7 @@ it('never leaks headers on the dashboard', function () {
     $entry = BacklogEntry::factory()->create();
 
     $this->get('/')->assertOk()->assertDontSee('sk-test-caller');
-    $this->get(route('backlog.entry', $entry->id))
+    $this->get(route('logs.entry', $entry->id))
         ->assertOk()
         ->assertDontSee('sk-test-caller')
         ->assertSee('authorization');

@@ -137,7 +137,7 @@ it('filters the backlog by caller', function () {
     entriesFrom($mine, 2);
     entriesFrom(str_repeat('b', 64), 3);
 
-    $ids = backlogIds($this->get(route('backlog', ['caller' => $mine]))->assertOk());
+    $ids = backlogIds($this->get(route('logs', ['caller' => $mine]))->assertOk());
 
     expect($ids)->toHaveCount(2);
 });
@@ -146,7 +146,7 @@ it('filters the backlog down to the keyless callers', function () {
     entriesFrom(null, 2);
     entriesFrom(str_repeat('a', 64), 3);
 
-    $ids = backlogIds($this->get(route('backlog', ['caller' => ApiKeyLabel::ANONYMOUS]))->assertOk());
+    $ids = backlogIds($this->get(route('logs', ['caller' => ApiKeyLabel::ANONYMOUS]))->assertOk());
 
     expect($ids)->toHaveCount(2);
 });
@@ -156,7 +156,7 @@ it('shows the label in the backlog once the caller is named', function () {
     entriesFrom($hash);
     ApiKeyLabel::factory()->create(['api_key_hash' => $hash, 'name' => 'Nightly batch']);
 
-    $row = collect(inertiaProps($this->get(route('backlog'))->assertOk())['entries'])->sole();
+    $row = collect(inertiaProps($this->get(route('logs'))->assertOk())['entries'])->sole();
 
     expect($row['caller']['label'])->toBe('Nightly batch')
         ->and($row['caller']['named'])->toBeTrue();
@@ -166,7 +166,7 @@ it('shows a shortened hash for a caller nobody named', function () {
     $hash = str_repeat('a', 64);
     entriesFrom($hash);
 
-    $row = collect(inertiaProps($this->get(route('backlog'))->assertOk())['entries'])->sole();
+    $row = collect(inertiaProps($this->get(route('logs'))->assertOk())['entries'])->sole();
 
     // The filter value stays the whole hash, so a bookmarked URL survives the
     // caller later being named or the name being removed.
@@ -180,7 +180,7 @@ it('offers named callers before unnamed ones in the filter', function () {
     entriesFrom(str_repeat('b', 64));
     ApiKeyLabel::factory()->create(['api_key_hash' => str_repeat('b', 64), 'name' => 'Named one']);
 
-    $callers = inertiaProps($this->get(route('backlog'))->assertOk())['callers'];
+    $callers = inertiaProps($this->get(route('logs'))->assertOk())['callers'];
 
     expect($callers[0]['label'])->toBe('Named one');
 });
