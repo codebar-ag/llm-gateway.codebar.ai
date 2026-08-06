@@ -10,6 +10,20 @@
 
         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ch.codebar.llmgateway-worker.plist
 
+    A vision or OCR call carries its image through this process as base64, and
+    PHP's 128M default is not enough to hold one: the worker died mid-request
+    inside Guzzle, and the job it was holding came back as "attempted too many
+    times". Hence the two limits below, which have to stay in this order —
+
+      -d memory_limit=1024M  the hard ceiling. Exceeding it is a fatal error
+                             that kills the worker and fails the job.
+      --memory=768           the soft one. Laravel checks it *between* jobs and
+                             exits cleanly so launchd starts a fresh worker.
+
+    The soft limit is deliberately the lower of the two: a worker that grew on
+    a big image restarts itself before it can ever reach the fatal one. Raise
+    both together, and keep the gap.
+
     After code changes: php artisan queue:restart
 -->
 <plist version="1.0">
@@ -20,6 +34,8 @@
     <key>ProgramArguments</key>
     <array>
         <string>/opt/homebrew/bin/php</string>
+        <string>-d</string>
+        <string>memory_limit=1024M</string>
         <string>/PATH/TO/llm-gateway/artisan</string>
         <string>queue:work</string>
         <string>--queue=default</string>
@@ -27,6 +43,7 @@
         <string>--timeout=960</string>
         <string>--sleep=1</string>
         <string>--max-time=3600</string>
+        <string>--memory=768</string>
     </array>
 
     <key>WorkingDirectory</key>

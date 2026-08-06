@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ApiKeyLabel;
 use App\Models\BacklogEntry;
+use App\Models\Gateway;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia;
 
@@ -188,6 +190,57 @@ it('offers every status in the filter, including ones nothing is in', function (
 
     expect(array_column(inertiaProps($this->get('/logs')->assertOk())['statuses'], 'value'))
         ->toBe(['queued', 'in_progress', 'completed', 'failed', 'cancelled']);
+});
+
+/*
+ | A vision call carries its image into `request` as base64, so the payload
+ | columns are the difference between a page that fits in memory and a blank
+ | 500. The listing renders none of them — it shows an id, a status, a model and
+ | a time — so it must not read them either, however many rows are on the page.
+ */
+it('never reads an entry payload into memory to draw the listing', function () {
+    $image = str_repeat('A', 200_000);
+
+    BacklogEntry::factory()->completed()->create([
+        'request' => ['model' => 'ocr-model', 'messages' => [['role' => 'user', 'content' => $image]]],
+    ]);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $this->get('/logs')->assertOk();
+
+    $reads = collect(DB::getQueryLog())
+        ->pluck('query')
+        ->filter(fn (string $query): bool => str_contains($query, 'from "backlog_entries"'));
+
+    DB::disableQueryLog();
+
+    expect($reads)->not->toBeEmpty()
+        ->and($reads->filter(fn (string $query): bool => str_contains($query, '"request"')))->toBeEmpty()
+        ->and($reads->filter(fn (string $query): bool => str_contains($query, '"output"')))->toBeEmpty()
+        ->and($reads->filter(fn (string $query): bool => str_contains($query, '"headers"')))->toBeEmpty();
+});
+
+it('still shows everything a row is made of without them', function () {
+    $gateway = Gateway::factory()->create(['name' => 'Mac Ollama']);
+
+    $entry = BacklogEntry::factory()->embeddings()->create([
+        'model' => 'nomic-embed-text',
+        'gateway_id' => $gateway->id,
+        'api_key_hash' => hash('sha256', 'sk-someone'),
+    ]);
+
+    $row = inertiaProps($this->get('/logs')->assertOk())['entries'][0];
+
+    // Every column the narrowed select has to keep serving.
+    expect($row['id'])->toBe($entry->id)
+        ->and($row['status']['label'])->toBe('queued')
+        ->and($row['kind'])->toBe('embeddings')
+        ->and($row['model'])->toBe('nomic-embed-text')
+        ->and($row['gateway'])->toBe('Mac Ollama')
+        ->and($row['caller']['hash'])->toBe($entry->api_key_hash)
+        ->and($row['created']['stamp'])->toBe($entry->created_at->format('d.m.Y H:i:s'));
 });
 
 it('leaves the live counters to the dashboard', function () {

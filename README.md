@@ -460,7 +460,7 @@ Run it:
 
 ```bash
 php artisan serve --port=8080
-php artisan queue:work --queue=default --tries=1 --timeout=960
+php -d memory_limit=1024M artisan queue:work --queue=default --tries=1 --timeout=960 --memory=768
 ```
 
 Run as many workers as the backend handles in parallel — with Ollama that is
@@ -693,15 +693,39 @@ hole — the entry sits in `queued` forever and the caller polls forever.
 For a terminal session:
 
 ```bash
-php artisan queue:work --queue=default --tries=1 --timeout=960
+php -d memory_limit=1024M artisan queue:work --queue=default --tries=1 --timeout=960 --memory=768
 ```
 
-To keep it running, use the launchd agent in `deploy/`. **Edit the paths
+### Memory
+
+The two memory flags are not decoration. A vision or OCR call carries its image
+through the worker as base64, and PHP's 128M default cannot hold one — the
+worker dies mid-request inside the HTTP client, and the job it was holding comes
+back as `MaxAttemptsExceededException: has been attempted too many times`, which
+names the retry rather than the cause.
+
+| Flag | What it is | What happens at the limit |
+| --- | --- | --- |
+| `-d memory_limit=1024M` | PHP's hard ceiling | Fatal error. The worker dies and takes the job with it. |
+| `--memory=768` | Laravel's soft ceiling | Checked *between* jobs. The worker exits cleanly and launchd starts a fresh one. |
+
+Keep the soft limit below the hard one, or it never fires: the point is that a
+worker which grew on a big image recycles itself before it can fatal. Raise both
+together.
+
+The same applies to the site, not just the worker — a caller posting a large
+image is a web request holding the same payload. That limit is PHP-FPM's, set in
+Herd's `php.ini` (Herd → PHP → the version in use → Open php.ini) rather than
+here, and 128M is likewise not enough for vision traffic.
+
+To keep the worker running, use the launchd agent in `deploy/`. **Edit the paths
 first** — the template ships with placeholders, and the PHP path is Herd's, not
 Homebrew's:
 
 ```xml
 <string>/Users/YOU/Library/Application Support/Herd/bin/php</string>
+<string>-d</string>
+<string>memory_limit=1024M</string>
 <string>artisan</string>
 <string>queue:work</string>
 ...
