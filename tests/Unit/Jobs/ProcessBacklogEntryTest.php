@@ -452,3 +452,13 @@ it('claims an embedding entry exactly once, so two workers cannot both run it', 
     // asked once, which is the whole point of the conditional UPDATE.
     Http::assertSentCount(1);
 });
+
+it('refuses an entry whose request body is gone', function () {
+    // Pruning only ever empties finished entries, so a queued entry without a
+    // request is an invariant broken somewhere else — named, not sent as {}.
+    $entry = BacklogEntry::factory()->create();
+    DB::table('backlog_entries')->where('id', $entry->id)->update(['request' => null]);
+
+    expect(fn () => process($entry))
+        ->toThrow(RuntimeException::class, 'no request body left to send');
+});

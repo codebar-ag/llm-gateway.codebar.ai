@@ -11,6 +11,7 @@ use App\Models\Gateway;
 use App\Support\Duration;
 use App\Support\PayloadPreview;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Config;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -71,6 +72,7 @@ class ShowBacklogEntryController
             'answerFormat' => AnswerFormat::of(is_string($answer) ? $answer : null)->value,
             'answerNote' => self::answerNote($entry),
             'protocolNote' => self::protocolNote($gateway),
+            'prunedNote' => self::prunedNote($entry),
             /*
              | Previewed, not whole: an OCR request carries its image as one
              | base64 string, and inlining it put the page past PHP-FPM's
@@ -120,6 +122,24 @@ class ShowBacklogEntryController
         return $entry->kind === BacklogKind::Embeddings
             ? 'Summarised. The vectors themselves are stored whole for the caller to collect — read them under Response.'
             : null;
+    }
+
+    /**
+     * Say what happened to the bodies, when pruning has taken them.
+     *
+     * Dated, because "removed after N days" alone leaves the reader doing
+     * arithmetic against `finished_at` to know whether this entry was pruned
+     * on schedule or by someone running the command early.
+     */
+    private static function prunedNote(BacklogEntry $entry): ?string
+    {
+        if ($entry->pruned_at === null) {
+            return null;
+        }
+
+        return 'Pruned '.$entry->pruned_at->format('d.m.Y').' — request and response bodies are'
+            .' removed once an entry has been finished for '
+            .Config::integer('gateway.backlog.prune_after_days').' days.';
     }
 
     /**

@@ -81,6 +81,12 @@ class ProcessBacklogEntry implements ShouldBeEncrypted, ShouldBeUniqueUntilProce
         $driver = $upstreams->for($gateway);
         $headers = $entry->headers ?? [];
 
+        // Nullable only since pruning, which touches nothing but finished
+        // entries — and a finished entry never reaches a worker. The throw is
+        // for the day that invariant breaks, not a path anything takes.
+        $request = $entry->request
+            ?? throw new RuntimeException('Entry '.$entry->id.' has no request body left to send.');
+
         /*
          | Which call this is, decided by the endpoint that queued it. All three
          | share the queue, the workers and the retry budget — that is the whole
@@ -89,12 +95,12 @@ class ProcessBacklogEntry implements ShouldBeEncrypted, ShouldBeUniqueUntilProce
          | stored whole because the caller polls for the body itself.
          */
         match ($entry->kind) {
-            BacklogKind::Chat => $this->complete($entry, $driver, $gateway, $headers),
+            BacklogKind::Chat => $this->complete($entry, $request, $driver, $gateway, $headers),
             BacklogKind::Embeddings => $entry->markAnswered($driver->normaliseEmbeddings(
-                self::body($driver->embeddings($gateway, $entry->request, $headers)),
+                self::body($driver->embeddings($gateway, $request, $headers)),
             )),
             BacklogKind::Moderations => $entry->markAnswered($driver->normaliseModerations(
-                self::body($driver->moderations($gateway, $entry->request, $headers)),
+                self::body($driver->moderations($gateway, $request, $headers)),
             )),
         };
     }
@@ -103,11 +109,12 @@ class ProcessBacklogEntry implements ShouldBeEncrypted, ShouldBeUniqueUntilProce
      * The chat path: normalise whatever the upstream speaks into a completion,
      * and store the assistant's text beside it.
      *
+     * @param  array<string, mixed>  $request
      * @param  array<string, string>  $headers
      */
-    private function complete(BacklogEntry $entry, UpstreamDriver $driver, Gateway $gateway, array $headers): void
+    private function complete(BacklogEntry $entry, array $request, UpstreamDriver $driver, Gateway $gateway, array $headers): void
     {
-        $response = $driver->send($gateway, $entry->request, $headers);
+        $response = $driver->send($gateway, $request, $headers);
         $completion = $response->json();
 
         if (! is_array($completion)) {

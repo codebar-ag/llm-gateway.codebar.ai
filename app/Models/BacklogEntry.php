@@ -30,7 +30,7 @@ use Throwable;
  * @property string|null $model
  * @property string|null $gateway_id
  * @property Gateway|null $gateway
- * @property array<string, mixed> $request
+ * @property array<string, mixed>|null $request
  * @property array<string, string>|null $headers
  * @property array<array-key, mixed>|null $output
  * @property array<string, int|null>|null $usage
@@ -40,6 +40,7 @@ use Throwable;
  * @property string|null $api_key_hash
  * @property CarbonImmutable|null $started_at
  * @property CarbonImmutable|null $finished_at
+ * @property CarbonImmutable|null $pruned_at
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
  * @property CarbonImmutable|null $deleted_at
@@ -581,6 +582,7 @@ class BacklogEntry extends Model
             'max_attempts' => 'integer',
             'started_at' => 'immutable_datetime',
             'finished_at' => 'immutable_datetime',
+            'pruned_at' => 'immutable_datetime',
             'created_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',
             'deleted_at' => 'immutable_datetime',

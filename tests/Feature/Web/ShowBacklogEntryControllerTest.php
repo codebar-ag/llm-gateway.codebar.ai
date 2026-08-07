@@ -289,3 +289,21 @@ it('caps an embeddings vector the page could not afford to inline', function () 
         // The fields around the vector survive: only the list was cut.
         ->and($props['entry']['output']['data'][0]['object'])->toBe('embedding');
 });
+
+it('says when an entry was pruned instead of showing empty panes', function () {
+    $entry = BacklogEntry::factory()->completed()->create(['finished_at' => now()->subDays(8)]);
+    $this->artisan('backlog:prune')->assertSuccessful();
+
+    $props = inertiaProps($this->get(route('logs.entry', $entry->id))->assertOk());
+
+    expect($props['entry']['request'])->toBeNull()
+        ->and($props['entry']['output'])->toBeNull()
+        ->and($props['entry']['prunedNote'])->toContain('Pruned')
+        ->and($props['entry']['prunedNote'])->toContain('7 days');
+});
+
+it('has no pruned note while the payloads are still there', function () {
+    $entry = BacklogEntry::factory()->completed()->create();
+
+    expect(inertiaProps($this->get(route('logs.entry', $entry->id))->assertOk())['entry']['prunedNote'])->toBeNull();
+});

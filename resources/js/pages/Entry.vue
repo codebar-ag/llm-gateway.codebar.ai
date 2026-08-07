@@ -253,12 +253,20 @@ const headerNamesPreview = computed(() => json(props.entry.headerNames));
                     </div>
 
                     <CodePreview
-                        v-if="active === 'request'"
+                        v-if="active === 'request' && entry.request !== null"
                         class="mt-3"
                         language="json"
                         max-height="32rem"
                         :value="requestPreview"
                     />
+                    <!-- A pruned entry says when its body was removed and why;
+                         anything else empty gets the dashboard's usual dash. -->
+                    <p
+                        v-else-if="active === 'request'"
+                        class="mt-3 text-dim"
+                    >
+                        {{ entry.prunedNote ?? '—' }}
+                    </p>
                 </template>
 
                 <template #response>
@@ -298,7 +306,7 @@ const headerNamesPreview = computed(() => json(props.entry.headerNames));
                         v-else-if="active === 'response'"
                         class="mt-3 text-dim"
                     >
-                        &mdash;
+                        {{ entry.prunedNote ?? '—' }}
                     </p>
                 </template>
 
