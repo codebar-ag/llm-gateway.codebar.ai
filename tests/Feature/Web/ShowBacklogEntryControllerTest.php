@@ -242,3 +242,50 @@ it('shows the verdict of a moderation whole, since it is small enough to read', 
         // Only embeddings are summarised away, so only they need the warning.
         ->and($props['entry']['answerNote'])->toBeNull();
 });
+
+it('shortens a payload blob the page could not afford to inline', function () {
+    // An OCR request, the way a vision caller actually sends one: the image
+    // rides inside the request as a single base64 string of over a megabyte.
+    $image = 'data:image/png;base64,'.str_repeat('QUJDRA==', 200_000);
+
+    $entry = BacklogEntry::factory()->create([
+        'request' => [
+            'model' => 'qwen3-vl:32b',
+            'messages' => [['role' => 'user', 'content' => [
+                ['type' => 'text', 'text' => 'read this receipt'],
+                ['type' => 'image_url', 'image_url' => ['url' => $image]],
+            ]]],
+        ],
+    ]);
+
+    $props = inertiaProps($this->get(route('logs.entry', $entry->id))->assertOk());
+    $url = $props['entry']['request']['messages'][0]['content'][1]['image_url']['url'];
+
+    expect($url)
+        ->toContain('the download holds the whole value')
+        ->and(strlen($url))->toBeLessThan(2_000)
+        // Everything readable in the same request arrives untouched — the
+        // preview drops the blob, not the shape around it.
+        ->and($props['entry']['request']['model'])->toBe('qwen3-vl:32b')
+        ->and($props['entry']['request']['messages'][0]['content'][0]['text'])->toBe('read this receipt');
+});
+
+it('caps an embeddings vector the page could not afford to inline', function () {
+    // A real embeddings output: hundreds of thousands of floats nobody scrolls.
+    $entry = BacklogEntry::factory()->create([
+        'kind' => BacklogKind::Embeddings,
+        'output' => ['data' => [[
+            'object' => 'embedding',
+            'index' => 0,
+            'embedding' => array_map(fn (int $i): float => $i / 1000, range(1, 1536)),
+        ]]],
+    ]);
+
+    $props = inertiaProps($this->get(route('logs.entry', $entry->id))->assertOk());
+    $vector = $props['entry']['output']['data'][0]['embedding'];
+
+    expect($vector)->toHaveCount(101)
+        ->and($vector[100])->toContain('1,436 more values')
+        // The fields around the vector survive: only the list was cut.
+        ->and($props['entry']['output']['data'][0]['object'])->toBe('embedding');
+});

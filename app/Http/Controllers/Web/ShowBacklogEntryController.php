@@ -9,6 +9,7 @@ use App\Enums\BacklogKind;
 use App\Models\BacklogEntry;
 use App\Models\Gateway;
 use App\Support\Duration;
+use App\Support\PayloadPreview;
 use Carbon\CarbonImmutable;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -70,13 +71,19 @@ class ShowBacklogEntryController
             'answerFormat' => AnswerFormat::of(is_string($answer) ? $answer : null)->value,
             'answerNote' => self::answerNote($entry),
             'protocolNote' => self::protocolNote($gateway),
-            'request' => $entry->request,
+            /*
+             | Previewed, not whole: an OCR request carries its image as one
+             | base64 string, and inlining it put the page past PHP-FPM's
+             | memory limit — a blank 500 in Inertia's error modal. The
+             | download routes below are where the whole value lives.
+             */
+            'request' => PayloadPreview::of($entry->request),
             'usage' => $entry->usage,
             'headerNames' => $entry->headerNames(),
-            'output' => $entry->output,
+            'output' => PayloadPreview::of($entry->output),
             'error' => $entry->error === null ? null : [
                 'details' => $entry->errorDetails(),
-                'raw' => $entry->error,
+                'raw' => PayloadPreview::of($entry->error),
             ],
             'apiKeyHash' => $entry->api_key_hash,
         ];

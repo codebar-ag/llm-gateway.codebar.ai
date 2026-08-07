@@ -84,3 +84,5 @@ auth.json
 !/storage/logs/.gitignore
 /storage/app/public/*
 !/storage/app/public/.gitignore
+
+data/*
