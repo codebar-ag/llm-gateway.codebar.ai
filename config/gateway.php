@@ -150,6 +150,16 @@ return [
         'retry_delay' => intval(env('BACKLOG_RETRY_DELAY', 10)),
 
         /*
+        | How many days a finished entry keeps its request and response
+        | bodies before `backlog:prune` empties them. The row itself stays —
+        | status, model, caller, usage, error and every timestamp — so the
+        | dashboard's history never shrinks; only the payload cargo goes.
+        | Almost all of it is embedding vectors already collected by their
+        | caller and base64 images inside OCR requests. Zero disables pruning.
+        */
+        'prune_after_days' => intval(env('BACKLOG_PRUNE_DAYS', 7)),
+
+        /*
         | Queue requests accepted per minute, counted per caller key (or per
         | IP for keyless callers) rather than for the app as a whole, so one
         | client cannot fill the backlog everyone else is waiting behind.

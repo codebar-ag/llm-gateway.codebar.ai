@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Runs Laravel's scheduler, which is what fires `backlog:prune` every night
+    (see routes/console.php). Without this agent the schedule never runs and
+    the backlog keeps its payloads forever.
+
+    `schedule:work` wakes once a minute and runs whatever is due, so it stays
+    resident like the queue worker rather than needing a cron line. It runs
+    one thing a day and holds no payloads, so it keeps PHP's default memory.
+
+    Check the php path with `which php` before loading — under Laravel Herd it
+    is not /opt/homebrew/bin/php. Then:
+
+        cp deploy/ch.codebar.llmgateway-scheduler.plist ~/Library/LaunchAgents/
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ch.codebar.llmgateway-scheduler.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ch.codebar.llmgateway-scheduler</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/php</string>
+        <string>/PATH/TO/llm-gateway/artisan</string>
+        <string>schedule:work</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/PATH/TO/llm-gateway</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/PATH/TO/llm-gateway/storage/logs/scheduler.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/PATH/TO/llm-gateway/storage/logs/scheduler.err.log</string>
+</dict>
+</plist>

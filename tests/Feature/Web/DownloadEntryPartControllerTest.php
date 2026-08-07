@@ -244,3 +244,12 @@ it('streams an oversized request as its stored bytes rather than re-encoding it'
 
     expect($response->streamedContent())->toBe($entry->fresh()->getRawOriginal('request'));
 });
+
+it('answers 404 for the request of a pruned entry', function () {
+    $entry = BacklogEntry::factory()->completed()->create(['finished_at' => now()->subDays(8)]);
+    test()->artisan('backlog:prune')->assertSuccessful();
+
+    asOperator()
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'request']))
+        ->assertNotFound();
+});
