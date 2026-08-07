@@ -246,3 +246,13 @@ it('does not run the usage aggregates on the auto-refresh reload', function () {
         ->and($props)->not->toHaveKey('perCaller')
         ->and($props)->not->toHaveKey('volume');
 });
+
+it('measures the month window under its own label', function () {
+    BacklogEntry::factory()->completed()->create(['created_at' => now()->subDays(20)]);
+    BacklogEntry::factory()->completed()->create(['created_at' => now()->subDays(40)]);
+
+    $props = inertiaProps($this->get('/?range=30d')->assertOk());
+
+    expect($props['range']['label'])->toBe('Last 30 days')
+        ->and($props['totals']['requests'])->toBe(1);
+});

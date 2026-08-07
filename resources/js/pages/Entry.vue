@@ -2,7 +2,7 @@
 import { Head, Link as InertiaLink } from '@inertiajs/vue3';
 import { useToast } from '@codebar-ag/storybook';
 import { computed, ref } from 'vue';
-import Dashboard from '../Layouts/Dashboard.vue';
+import Dashboard from '../layouts/Dashboard.vue';
 
 const props = defineProps({
     entry: { type: Object, required: true },

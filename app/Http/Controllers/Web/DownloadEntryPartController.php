@@ -22,6 +22,9 @@ class DownloadEntryPartController
      */
     private const PARTS = ['request', 'response', 'answer', 'error'];
 
+    /** Bigger than this, a payload is streamed as stored rather than re-encoded. */
+    private const PRETTY_LIMIT = 1_000_000;
+
     public function __invoke(string $id, string $part): StreamedResponse
     {
         abort_unless(in_array($part, self::PARTS, true), 404);
@@ -54,10 +57,10 @@ class DownloadEntryPartController
     private static function content(BacklogEntry $entry, string $part): ?string
     {
         return match ($part) {
-            'request' => self::json($entry->request),
-            'response' => self::json($entry->output),
+            'request' => self::json($entry, 'request'),
+            'response' => self::json($entry, 'output'),
             'answer' => self::text($entry->answerText()),
-            'error' => self::json($entry->error),
+            'error' => self::json($entry, 'error'),
             default => null,
         };
     }
@@ -72,14 +75,30 @@ class DownloadEntryPartController
         return basename($id).'_'.$part.'.'.$format->extension();
     }
 
-    /** @param  array<array-key, mixed>|null  $value */
-    private static function json(?array $value): ?string
+    /**
+     * The stored JSON, pretty-printed while that is affordable.
+     *
+     * Pretty-printing means decoding the column and encoding it again, and an
+     * OCR request carries its image through both copies — past PHP-FPM's
+     * memory limit, the download is a blank 500. Past the threshold the file
+     * is the stored bytes untouched, which no ceiling can be blown by and
+     * which any editor pretty-prints on its own.
+     *
+     * @param  literal-string  $column
+     */
+    private static function json(BacklogEntry $entry, string $column): ?string
     {
-        if ($value === null) {
+        $stored = $entry->getRawOriginal($column);
+
+        if (! is_string($stored)) {
             return null;
         }
 
-        return json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        if (strlen($stored) > self::PRETTY_LIMIT) {
+            return $stored;
+        }
+
+        return json_encode($entry->getAttribute($column), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 
     private static function text(mixed $value): ?string

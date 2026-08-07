@@ -89,9 +89,7 @@ class UsageStatistics
              | of work not yet started is not a failing gateway, and dividing by
              | every row would quietly improve the rate the busier it gets.
              */
-            'failureRate' => $completed + $failed === 0
-                ? null
-                : round($failed / ($completed + $failed) * 100, 1),
+            'failureRate' => $completed + $failed === 0 ? null : round($failed / ($completed + $failed) * 100, 1),
 
             'inputTokens' => $input,
             'outputTokens' => $output,

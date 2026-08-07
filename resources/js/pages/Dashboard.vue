@@ -3,10 +3,10 @@ import { Head, Link as InertiaLink, usePoll } from '@inertiajs/vue3';
 import { computed } from 'vue';
 /*
  | Aliased, because this page and the frame it renders into share a name: the
- | page is the dashboard, and `Layouts/Dashboard.vue` is the nav-and-flash shell
+ | page is the dashboard, and `layouts/Dashboard.vue` is the nav-and-flash shell
  | every page sits in.
  */
-import DashboardLayout from '../Layouts/Dashboard.vue';
+import DashboardLayout from '../layouts/Dashboard.vue';
 
 const props = defineProps({
     range: { type: Object, required: true },

@@ -1,7 +1,7 @@
 <script setup>
 import { Head, Link as InertiaLink, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
-import Dashboard from '../Layouts/Dashboard.vue';
+import Dashboard from '../layouts/Dashboard.vue';
 
 const props = defineProps({
     callers: { type: Array, required: true },

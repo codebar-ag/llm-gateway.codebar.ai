@@ -1,6 +1,6 @@
 <script setup>
 import { Head, Link as InertiaLink, useForm } from '@inertiajs/vue3';
-import Dashboard from '../../Layouts/Dashboard.vue';
+import Dashboard from '../../layouts/Dashboard.vue';
 
 const props = defineProps({
     gateway: { type: Object, required: true },

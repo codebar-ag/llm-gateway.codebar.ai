@@ -228,3 +228,19 @@ it('404s the answer of an embedding that has not been run yet', function () {
         ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'answer']))
         ->assertNotFound();
 });
+
+it('streams an oversized request as its stored bytes rather than re-encoding it', function () {
+    // Over the pretty-print threshold: decoding and re-encoding this to indent
+    // it is the memory the web process does not have.
+    $entry = BacklogEntry::factory()->create([
+        'request' => ['model' => 'qwen3-vl:32b', 'image' => str_repeat('QUJDRA==', 200_000)],
+    ]);
+
+    $response = asOperator()
+        ->get(route('logs.entry.download', ['id' => $entry->id, 'part' => 'request']))
+        ->assertOk()
+        ->assertDownload($entry->id.'_request.json')
+        ->assertHeader('Content-Type', 'application/json');
+
+    expect($response->streamedContent())->toBe($entry->fresh()->getRawOriginal('request'));
+});
