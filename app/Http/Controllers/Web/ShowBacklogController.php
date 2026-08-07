@@ -23,6 +23,27 @@ class ShowBacklogController
     /** How much of an unnamed caller's hash the listing shows. */
     private const SHORT_HASH = 12;
 
+    /**
+     * Exactly what a row renders, and nothing else.
+     *
+     * Named explicitly because `request` and `output` are the whole point of
+     * leaving them out: an OCR call carries its image into the request as
+     * base64, so a hundred of them hydrated together is hundreds of megabytes
+     * read out of Postgres, decoded into PHP arrays by the `array` cast, and
+     * then thrown away unread — the listing shows an id, a status, a model and
+     * a time. A page that used to fit in memory stops fitting the day someone
+     * points a vision model at it, and a fatal there is a blank 500 rather than
+     * an error anyone can act on.
+     *
+     * `created_at` and `id` also carry the cursor, and `gateway_id` the
+     * eager-loaded relation, so all three have to be here regardless.
+     *
+     * @var list<string>
+     */
+    private const COLUMNS = [
+        'id', 'status', 'kind', 'model', 'gateway_id', 'api_key_hash', 'created_at',
+    ];
+
     public function __invoke(Request $request): Response
     {
         $filters = BacklogFilters::fromRequest($request);
@@ -33,6 +54,7 @@ class ShowBacklogController
         // has to read and discard every row it skips. `id` breaks ties so a
         // shared created_at cannot drop rows between pages.
         $entries = $matching
+            ->select(self::COLUMNS)
             ->with('gateway')
             ->orderByDesc('created_at')
             ->orderByDesc('id')

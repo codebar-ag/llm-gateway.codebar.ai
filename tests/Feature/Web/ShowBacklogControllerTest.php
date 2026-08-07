@@ -5,8 +5,13 @@ declare(strict_types=1);
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ApiKeyLabel;
 use App\Models\BacklogEntry;
+use App\Models\Gateway;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia;
+
+/** One full listing page, mirroring ShowBacklogController::PER_PAGE. */
+const LISTING_PAGE = 100;
 
 /**
  * The headers `usePoll` puts on the wire for the backlog's 15-second refresh.
@@ -188,6 +193,108 @@ it('offers every status in the filter, including ones nothing is in', function (
 
     expect(array_column(inertiaProps($this->get('/logs')->assertOk())['statuses'], 'value'))
         ->toBe(['queued', 'in_progress', 'completed', 'failed', 'cancelled']);
+});
+
+/*
+ | A vision call carries its image into `request` as base64, so the payload
+ | columns are the difference between a page that fits in memory and a blank
+ | 500. The listing renders none of them — it shows an id, a status, a model and
+ | a time — so it must not read them either, however many rows are on the page.
+ */
+it('never reads an entry payload into memory to draw the listing', function () {
+    $image = str_repeat('A', 200_000);
+
+    BacklogEntry::factory()->completed()->create([
+        'request' => ['model' => 'ocr-model', 'messages' => [['role' => 'user', 'content' => $image]]],
+    ]);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $this->get('/logs')->assertOk();
+
+    $reads = collect(DB::getQueryLog())
+        ->pluck('query')
+        ->filter(fn (string $query): bool => str_contains($query, 'from "backlog_entries"'));
+
+    DB::disableQueryLog();
+
+    $listing = $reads->filter(fn (string $query): bool => str_contains($query, 'order by'));
+
+    /*
+     | `select *` has to be rejected explicitly. Naming the payload columns and
+     | checking they are absent is not enough — a star selects them without
+     | mentioning them, which is exactly the query this test exists to catch,
+     | and it passed that way while the page was still falling over.
+     */
+    expect($listing)->not->toBeEmpty()
+        ->and($listing->filter(fn (string $query): bool => str_contains($query, 'select *')))->toBeEmpty()
+        ->and($listing->filter(fn (string $query): bool => str_contains($query, '"request"')))->toBeEmpty()
+        ->and($listing->filter(fn (string $query): bool => str_contains($query, '"output"')))->toBeEmpty()
+        ->and($listing->filter(fn (string $query): bool => str_contains($query, '"headers"')))->toBeEmpty();
+});
+
+/*
+ | The real thing, not a shape: a full page of entries carrying payloads the
+ | size an OCR call actually queues. Hydrating those was a fatal — and a fatal
+ | is a blank 500, which the browser shows as an empty error box with nothing in
+ | it to read. This asserts the page renders *and* that it never paid for the
+ | payloads, by measuring what the request actually allocated.
+ */
+it('renders a full page of entries carrying real OCR-sized payloads', function () {
+    // ~200 KB each, the base64 of a modest scan. Twenty megabytes over a page.
+    $image = str_repeat('QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVph', 5_800);
+
+    $entries = BacklogEntry::factory()->count(LISTING_PAGE)->completed()->create([
+        'model' => 'paddle-ocr-vl',
+        'request' => ['model' => 'paddle-ocr-vl', 'messages' => [['role' => 'user', 'content' => $image]]],
+    ]);
+
+    $queued = $entries->count() * strlen($image);
+
+    // Nothing of the fixture may still be held when the measurement starts, or
+    // the baseline carries the very bytes the page is being trusted not to read.
+    unset($entries, $image);
+    gc_collect_cycles();
+
+    memory_reset_peak_usage();
+    $before = memory_get_usage();
+
+    $response = $this->get('/logs')->assertOk();
+
+    $spent = memory_get_peak_usage() - $before;
+
+    expect(backlogIds($response))->toHaveCount(LISTING_PAGE)
+        /*
+         | Measured against the payloads, not against the PHP limit. The page
+         | costs a few megabytes of its own whatever is in the table — a hundred
+         | rows of props, encoded to JSON — and that cost is fixed. What must
+         | never happen is it growing with the size of the images, so the bar is
+         | half of what is sitting in those columns: reading them would cost all
+         | of it and then the arrays `json_decode` builds on top.
+         */
+        ->and($spent)->toBeLessThan((int) ($queued / 2));
+});
+
+it('still shows everything a row is made of without them', function () {
+    $gateway = Gateway::factory()->create(['name' => 'Mac Ollama']);
+
+    $entry = BacklogEntry::factory()->embeddings()->create([
+        'model' => 'nomic-embed-text',
+        'gateway_id' => $gateway->id,
+        'api_key_hash' => hash('sha256', 'sk-someone'),
+    ]);
+
+    $row = inertiaProps($this->get('/logs')->assertOk())['entries'][0];
+
+    // Every column the narrowed select has to keep serving.
+    expect($row['id'])->toBe($entry->id)
+        ->and($row['status']['label'])->toBe('queued')
+        ->and($row['kind'])->toBe('embeddings')
+        ->and($row['model'])->toBe('nomic-embed-text')
+        ->and($row['gateway'])->toBe('Mac Ollama')
+        ->and($row['caller']['hash'])->toBe($entry->api_key_hash)
+        ->and($row['created']['stamp'])->toBe($entry->created_at->format('d.m.Y H:i:s'));
 });
 
 it('leaves the live counters to the dashboard', function () {
