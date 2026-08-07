@@ -66,7 +66,7 @@ ingress:
   #   - add a Cloudflare Access policy on the hostname (Zero Trust → Access →
   #     Applications) for SSO in front of the token.
   - hostname: llm.async.example.com
-    path: ^/($|login$|logout$|callers($|/)|entries/|gateways($|/)|build/|favicon\.)
+    path: ^/($|login$|logout$|logs($|/)|callers($|/)|entries/|gateways($|/)|build/|favicon\.)
     service: https://127.0.0.1:443
     originRequest:
       httpHostHeader: llm-gateway.codebar.test
