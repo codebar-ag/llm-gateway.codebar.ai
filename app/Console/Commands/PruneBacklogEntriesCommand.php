@@ -10,6 +10,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Number;
 
 /**
  * Empties the payload columns of entries old enough that nobody will read
@@ -56,19 +58,48 @@ class PruneBacklogEntriesCommand extends Command
             ->whereNotNull('finished_at')
             ->where('finished_at', '<', $cutoff);
 
+        // Measured before the UPDATE empties it, and in SQL — only the sum
+        // crosses into PHP, never a payload.
+        $freeing = self::payloadBytes(clone $matching);
+
         $pruned = $this->option('pretend')
             ? $matching->count()
             : self::prune($matching);
 
         $this->components->info(sprintf(
-            '%s %d %s finished before %s.',
+            '%s %d %s finished before %s, freeing %s of payload.',
             $this->option('pretend') ? 'Would prune' : 'Pruned',
             $pruned,
             $pruned === 1 ? 'entry' : 'entries',
             $cutoff->toDateTimeString(),
+            Number::fileSize($freeing),
         ));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * How many bytes of request and response bodies the matching rows hold.
+     *
+     * The number an operator acts on: Postgres reuses the space on its own
+     * but only VACUUM FULL hands it back to the filesystem, so "freeing 3 GB"
+     * says what tonight's run was worth where a before/after of the file
+     * size would read as the prune having done nothing.
+     *
+     * @param  Builder<BacklogEntry>  $matching
+     */
+    private static function payloadBytes(Builder $matching): int
+    {
+        // The cast is Postgres needing text before it will measure json;
+        // SQLite stores the column as text to begin with.
+        $length = match (DB::connection()->getDriverName()) {
+            'pgsql' => 'coalesce(length(request::text), 0) + coalesce(length(output::text), 0)',
+            default => 'coalesce(length(request), 0) + coalesce(length(output), 0)',
+        };
+
+        $bytes = $matching->toBase()->selectRaw("coalesce(sum({$length}), 0) as bytes")->value('bytes');
+
+        return is_numeric($bytes) ? (int) $bytes : 0;
     }
 
     /**
