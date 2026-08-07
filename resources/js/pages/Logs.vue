@@ -1,7 +1,7 @@
 <script setup>
 import { Head, Link as InertiaLink, router, usePoll } from '@inertiajs/vue3';
 import { reactive } from 'vue';
-import Dashboard from '../Layouts/Dashboard.vue';
+import Dashboard from '../layouts/Dashboard.vue';
 
 const props = defineProps({
     filters: { type: Object, required: true },
