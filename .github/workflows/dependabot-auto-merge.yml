@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   dependabot:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_GITHUB_RUNNER == 'true' && fromJSON('{"labels":["ubuntu-latest"]}') || fromJSON('{"group":"Default"}') }}
     if: ${{ github.actor == 'dependabot[bot]' }}
     steps:
 

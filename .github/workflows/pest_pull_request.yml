@@ -4,7 +4,7 @@ on: pull_request
 
 jobs:
   pest:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_GITHUB_RUNNER == 'true' && fromJSON('{"labels":["ubuntu-latest"]}') || fromJSON('{"group":"Default"}') }}
     name: pull-request | pest
 
     env:
@@ -31,6 +31,12 @@ jobs:
 
       - name: Install Composer Dependencies
         run: composer install --no-progress --prefer-dist --no-interaction --optimize-autoloader
+
+      # Without a .env, phpdotenv warns once per test that boots the framework.
+      # The values do not matter: `phpunit.xml` sets the whole test environment,
+      # and Laravel loads .env immutably, so nothing here can override it.
+      - name: Prepare the .env file
+        run: cp .env.example .env
 
       - name: Setup Node.js Environment
         uses: actions/setup-node@v7
