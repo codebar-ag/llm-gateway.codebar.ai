@@ -17,7 +17,7 @@
         "vite": "^8.2"
     },
     "dependencies": {
-        "@codebar-ag/storybook": "github:codebar-ag/storybook.codebar.ch#v1.9.8",
+        "@codebar-ag/storybook": "github:codebar-ag/storybook.codebar.ch#v1.13.0",
         "@codemirror/lang-json": "^6.0.2",
         "@codemirror/lang-markdown": "^6.5.2",
         "@codemirror/state": "^6.7.1",
