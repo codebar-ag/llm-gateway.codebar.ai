@@ -67,6 +67,86 @@ it('maps responses parameters onto chat parameters', function () {
     ]);
 });
 
+/**
+ * The Responses API spells structured output `text.format`, not
+ * `response_format`. Until this was translated the key fell outside
+ * `PARAMETER_MAP` and was dropped in silence — the request succeeded, the model
+ * answered free-form, and nothing said the schema had never been applied.
+ */
+it('translates the responses text.format schema into a chat response_format', function () {
+    $schema = [
+        'type' => 'object',
+        'properties' => ['number' => ['type' => 'string']],
+        'required' => ['number'],
+        'additionalProperties' => false,
+    ];
+
+    $id = $this->postJson('/v1/responses', [
+        'model' => 'm',
+        'input' => 'x',
+        'text' => ['format' => [
+            'type' => 'json_schema',
+            'name' => 'document_extraction',
+            'schema' => $schema,
+            'strict' => true,
+        ]],
+    ], gatewayAuth())->json('id');
+
+    expect(BacklogEntry::find($id)->request)->toBe([
+        'model' => 'm',
+        'messages' => [['role' => 'user', 'content' => 'x']],
+        'response_format' => [
+            'type' => 'json_schema',
+            'json_schema' => [
+                'name' => 'document_extraction',
+                'schema' => $schema,
+                'strict' => true,
+            ],
+        ],
+    ]);
+});
+
+it('translates a bare json_object format too', function () {
+    $id = $this->postJson('/v1/responses', [
+        'model' => 'm',
+        'input' => 'x',
+        'text' => ['format' => ['type' => 'json_object']],
+    ], gatewayAuth())->json('id');
+
+    expect(BacklogEntry::find($id)->request['response_format'])->toBe(['type' => 'json_object']);
+});
+
+it('lets an explicit response_format win over text.format rather than fighting it', function () {
+    $id = $this->postJson('/v1/responses', [
+        'model' => 'm',
+        'input' => 'x',
+        'response_format' => ['type' => 'json_object'],
+        'text' => ['format' => ['type' => 'json_schema', 'name' => 'ignored', 'schema' => []]],
+    ], gatewayAuth())->json('id');
+
+    expect(BacklogEntry::find($id)->request['response_format'])->toBe(['type' => 'json_object']);
+});
+
+it('adds no response_format for a text block that asks for no format', function () {
+    $id = $this->postJson('/v1/responses', [
+        'model' => 'm',
+        'input' => 'x',
+        'text' => ['format' => ['type' => 'text']],
+    ], gatewayAuth())->json('id');
+
+    expect(BacklogEntry::find($id)->request)->not->toHaveKey('response_format');
+});
+
+it('adds no response_format when text carries no format at all', function () {
+    $id = $this->postJson('/v1/responses', [
+        'model' => 'm',
+        'input' => 'x',
+        'text' => ['verbosity' => 'low'],
+    ], gatewayAuth())->json('id');
+
+    expect(BacklogEntry::find($id)->request)->not->toHaveKey('response_format');
+});
+
 it('omits parameters the client did not send', function () {
     $id = $this->postJson('/v1/responses', ['model' => 'm', 'input' => 'x'], gatewayAuth())->json('id');
 
