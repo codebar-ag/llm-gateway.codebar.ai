@@ -49,10 +49,69 @@ class CreateResponseController
         return collect(self::PARAMETER_MAP)
             ->filter(fn (string $to, string $from) => array_key_exists($from, $payload))
             ->mapWithKeys(fn (string $to, string $from) => [$to => $payload[$from]])
+            ->merge($this->responseFormat($payload))
             ->merge($this->tools($payload))
             ->prepend(ChatPayload::toMessages($payload), 'messages')
             ->prepend(Arr::get($payload, 'model'), 'model')
             ->all();
+    }
+
+    /**
+     * The Responses API's `text.format`, in the shape chat completions wants.
+     *
+     * Like `tools()` below, this is a reshape rather than a rename, which is why
+     * it cannot live in `PARAMETER_MAP`: the Responses API states the format
+     * flat under `text.format`, and chat completions nests everything but the
+     * type under `response_format.json_schema`.
+     *
+     * ── Why this is worth its own method ─────────────────────────────────────
+     *
+     * Without it the key was not translated, and `toChatRequest` keeps only what
+     * the map names — so a caller asking for schema-constrained output had the
+     * schema **silently dropped**, with no warning, no log line and no 400. The
+     * request succeeded, the model answered free-form, and nothing anywhere said
+     * the constraint had not been applied.
+     *
+     * That is not hypothetical. An OCR benchmark drove two vision models through
+     * this endpoint with `text.format` set and `strict: true`, and measured both
+     * of them, for weeks, against a schema neither model was ever given. The
+     * same models answer with exactly the declared keys when the grammar
+     * actually reaches them and with an invented shape when it does not, so the
+     * dropped key was most of the difference in their scores.
+     *
+     * A caller that already speaks chat completions and sent `response_format`
+     * itself keeps it: the map has copied it verbatim, and this only fills a gap
+     * rather than overriding an explicit choice.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function responseFormat(array $payload): array
+    {
+        if (array_key_exists('response_format', $payload)) {
+            return [];
+        }
+
+        $format = Arr::get($payload, 'text.format');
+
+        if (! is_array($format)) {
+            return [];
+        }
+
+        $type = Arr::get($format, 'type');
+
+        if ($type === 'json_object') {
+            return ['response_format' => ['type' => 'json_object']];
+        }
+
+        if ($type !== 'json_schema') {
+            return [];
+        }
+
+        return ['response_format' => [
+            'type' => 'json_schema',
+            'json_schema' => Arr::except($format, ['type']),
+        ]];
     }
 
     /**
