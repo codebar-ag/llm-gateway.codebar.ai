@@ -12,6 +12,8 @@ it('empties the payloads of entries finished longer ago than the window', functi
 
     $before = $entry->fresh()->updated_at->toDateTimeString();
 
+    // One substring, not one per claim: the whole report is a single console
+    // write, and PendingCommand lets each write satisfy only one expectation.
     $this->artisan('backlog:prune')
         ->expectsOutputToContain('Pruned 1 entry finished before')
         ->assertSuccessful();
@@ -88,4 +90,19 @@ it('is scheduled to run nightly', function () {
 
     expect($events->filter(fn ($event): bool => str_contains((string) $event->command, 'backlog:prune')))
         ->toHaveCount(1);
+});
+
+it('reports how much payload the run frees', function () {
+    // A hand-sized payload, so the byte count in the report is exact:
+    // {"k":"v"} is nine bytes, and there is no output to add to it.
+    BacklogEntry::factory()->create([
+        'status' => 'completed',
+        'finished_at' => now()->subDays(8),
+        'request' => ['k' => 'v'],
+        'output' => null,
+    ]);
+
+    $this->artisan('backlog:prune')
+        ->expectsOutputToContain('freeing 9 B of payload')
+        ->assertSuccessful();
 });
