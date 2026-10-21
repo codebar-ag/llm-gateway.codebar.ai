@@ -14,7 +14,7 @@
         "laravel-vite-plugin": "^3.1",
         "playwright": "^1.62.0",
         "tailwindcss": "^4.3.2",
-        "vite": "^8.2"
+        "vite": "^8.3"
     },
     "dependencies": {
         "@codebar-ag/storybook": "github:codebar-ag/storybook.codebar.ch#v1.13.0",
